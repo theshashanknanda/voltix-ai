@@ -80,27 +80,6 @@ Implementation will be developed in later phases.
 
 ---
 
-## 📌 Agile Approach
-
-Voltix AI follows Agile principles for planning and design:
-
-- **Epics** represent major system capabilities
-- **User Stories** follow the standard Agile format  
-  *“As a type of user, I want to perform an action, so that I get a benefit.”*
-- Stories are written to be independent, testable, and sprint-sized
-- GitHub Issues are used to manage and track all backlog items
-
-Sprint planning is conceptual at this stage and used for design clarity rather than execution tracking.
-
----
-
-## 📖 Current Status
-
-🟡 Product Backlog and system design are complete  
-🔜 Next phase will focus on implementation and sprint execution
-
----
-
 ## 📄 License
 
 This project is developed for academic purposes.
