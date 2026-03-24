@@ -1,16 +1,24 @@
-import { useState } from 'react'
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import UploadPage from './UploadPage'
 
-function App() {
-  const [page, setPage] = useState<'landing' | 'upload'>('landing')
-
-  if (page === 'upload') return <UploadPage />
-
+// TODO: Remove this landing stub — Kanwar to replace with real landing/auth pages
+function Landing() {
+  const navigate = useNavigate()
   return (
-    // TODO: Remove this landing stub — Kanwar to replace with real landing/auth pages
     <div>
-      <button onClick={() => setPage('upload')}>Go to Upload Workspace</button>
+      <button onClick={() => navigate('/upload')}>Go to Upload Workspace</button>
     </div>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/upload" element={<UploadPage />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
 
