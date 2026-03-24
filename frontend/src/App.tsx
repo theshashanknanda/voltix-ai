@@ -1,12 +1,15 @@
 import { useState } from 'react'
-import './App.css'
+import UploadPage from './UploadPage'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [page, setPage] = useState<'landing' | 'upload'>('landing')
+
+  if (page === 'upload') return <UploadPage />
 
   return (
-    <div className="flex items-center justify-center h-screen bg-black">
-      <h1 className="text-blue-500 font-bold text-4xl">Voltix-ai</h1>
+    // TODO: Remove this landing stub — Kanwar to replace with real landing/auth pages
+    <div>
+      <button onClick={() => setPage('upload')}>Go to Upload Workspace</button>
     </div>
   )
 }
