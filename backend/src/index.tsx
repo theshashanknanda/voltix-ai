@@ -3,6 +3,8 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import explainRouter from './api/explainCode';
+import authRouter from './api/auth';
+import { connectMongo } from './db/mongo';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -21,8 +23,20 @@ app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+app.use('/api/auth', authRouter);
 app.use('/api', explainRouter);
 
-app.listen(port, () => {
-  console.log(`Server is running at http://localhost:${port}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  connectMongo()
+    .then(() => {
+      app.listen(port, () => {
+        console.log(`Server is running at http://localhost:${port}`);
+      });
+    })
+    .catch((err: unknown) => {
+      console.error('[Mongo Connection Error]', err);
+      process.exit(1);
+    });
+}
+
+export default app;

@@ -1,24 +1,28 @@
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
-import UploadPage from './UploadPage'
-
-// TODO: Remove this landing stub — Kanwar to replace with real landing/auth pages
-function Landing() {
-  const navigate = useNavigate()
-  return (
-    <div>
-      <button onClick={() => navigate('/upload')}>Go to Upload Workspace</button>
-    </div>
-  )
-}
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import LandingPage from './pages/LandingPage'
+import AuthPage from './pages/AuthPage'
+import DashboardPage from './pages/DashboardPage'
+import ProtectedRoute from './routes/ProtectedRoute'
+import { AuthProvider } from './auth/AuthContext'
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/upload" element={<UploadPage />} />
-      </Routes>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   )
 }
 

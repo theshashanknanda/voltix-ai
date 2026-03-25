@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import type { DragEvent, ChangeEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 
-const API_URL = 'http://localhost:5000/api/explain';
+const API_URL = 'http://localhost:5050/api/explain';
 
 // Color palette — base: #101a30
 const C = {
@@ -27,6 +27,9 @@ export default function UploadPage() {
   const [status, setStatus]        = useState<Status>('idle');
   const [errorMsg, setError]       = useState('');
   const [dragging, setDragging]    = useState(false);
+  const [email, setEmail]          = useState('');
+  const [password, setPassword]    = useState('');
+  const [token, setToken]          = useState(() => localStorage.getItem('voltix_token') || '');
   const inputRef                   = useRef<HTMLInputElement>(null);
 
   const pick = (f: File) => {
@@ -43,13 +46,44 @@ export default function UploadPage() {
     const f = e.target.files?.[0]; if (f) pick(f);
   };
 
+  const login = async () => {
+    if (!email || !password) {
+      setError('Email and password are required to login.');
+      return;
+    }
+
+    setError('');
+
+    try {
+      const res = await fetch('http://localhost:5050/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Login failed');
+      setToken(data.token);
+      localStorage.setItem('voltix_token', data.token);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    }
+  };
+
   const submit = async () => {
     if (!file) return;
+    if (!token) {
+      setError('Please login first.');
+      return;
+    }
     setStatus('loading'); setExp(''); setError('');
     const form = new FormData();
     form.append('file', file);
     try {
-      const res  = await fetch(API_URL, { method: 'POST', body: form });
+      const res  = await fetch(API_URL, { 
+        method: 'POST', 
+        body: form,
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Unknown error');
       setExp(data.explanation); setStatus('success');
@@ -93,7 +127,32 @@ export default function UploadPage() {
 
         {/* Left — upload */}
         <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, padding:24, display:'flex', flexDirection:'column', gap:16 }}>
-          <p style={{ margin:0, fontWeight:600 }}>Codebase Source</p>
+          <p style={{ margin:0, fontWeight:600 }}>Auth + Codebase Source</p>
+
+          <div style={{ display:'grid', gap:10 }}>
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              style={{ padding:'10px 12px', borderRadius:8, border:`1px solid ${C.border}`, background:C.bg, color:C.text }}
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              style={{ padding:'10px 12px', borderRadius:8, border:`1px solid ${C.border}`, background:C.bg, color:C.text }}
+            />
+            <button
+              style={{ background: (email && password) ? C.green : C.dim, color: C.bg, border:'none', borderRadius:8,
+                padding:'8px 16px', fontWeight:700, fontSize:'0.85rem', cursor:(email&&password)?'pointer':'not-allowed', opacity:(email&&password)?1:0.6 }}
+              onClick={login}
+              disabled={!email || !password}
+            >
+              {token ? 'Logged In' : 'Login'}
+            </button>
+          </div>
 
           <div
             style={{ border:`1.5px dashed ${dragging ? C.green : C.border}`, borderRadius:8, padding:'48px 24px', textAlign:'center', cursor:'pointer',
