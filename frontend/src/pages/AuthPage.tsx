@@ -74,9 +74,6 @@ export default function AuthPage() {
           </div>
 
           <form className="auth-form" onSubmit={submit}>
-            <button type="button" className="btn btn-ghost" disabled>
-              Continue with Google
-            </button>
 
             <input
               className="input"
