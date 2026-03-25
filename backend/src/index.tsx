@@ -4,7 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import explainRouter from './api/explainCode';
 import authRouter from './api/auth';
-import { connectMongo } from './db/mongo';
+import analysesRouter from './api/analyses';
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -25,25 +25,13 @@ app.get('/health', (_req: Request, res: Response) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api', explainRouter);
+app.use('/api', analysesRouter);
 
 // For local development and testing
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
-  connectMongo()
-    .then(() => {
-      app.listen(port, () => {
-        console.log(`Server is running at http://localhost:${port}`);
-      });
-    })
-    .catch((err: unknown) => {
-      console.error('[Mongo Connection Error]', err);
-      process.exit(1);
-    });
-}
-
-// For Vercel / serverless environments, we still need to ensure DB is connected
-// but Vercel handles the actual server starting.
-if (process.env.VERCEL) {
-  connectMongo().catch(err => console.error('Vercel Mongo Connect Error:', err));
+  app.listen(port, () => {
+    console.log(`Server is running at http://localhost:${port}`);
+  });
 }
 
 export default app;

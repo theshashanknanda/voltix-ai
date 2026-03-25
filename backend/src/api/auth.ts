@@ -2,11 +2,12 @@ import 'dotenv/config';
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import User from '../models/User';
+import { prisma } from '../database/prismaClient';
 
 interface AuthBody {
   email?: string;
   password?: string;
+  name?: string;
 }
 
 const router = Router();
@@ -27,7 +28,7 @@ const issueToken = (userId: string, email: string) =>
 router.post(
   '/register',
   async (req: Request<unknown, unknown, AuthBody>, res: Response): Promise<void> => {
-    const { email, password } = req.body ?? {};
+    const { email, password, name } = req.body ?? {};
 
     if (!email || !password) {
       res.status(400).json({ error: 'Email and password are required.' });
@@ -37,7 +38,7 @@ router.post(
     const normalizedEmail = sanitizeEmail(email);
 
     try {
-      const existingUser = await User.findOne({ email: normalizedEmail }).lean();
+      const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
       if (existingUser) {
         res.status(409).json({ error: 'User already exists.' });
@@ -45,11 +46,11 @@ router.post(
       }
 
       const passwordHash = await bcrypt.hash(password, 12);
-      await User.create({ email: normalizedEmail, passwordHash });
+      await prisma.user.create({ data: { email: normalizedEmail, passwordHash, name: name || undefined } });
       res.status(201).json({ message: 'Registration successful.' });
     } catch (err: unknown) {
       console.error('[Register Error]', err);
-      const isDuplicate = err instanceof Error && 'code' in err && (err as { code?: number }).code === 11000;
+      const isDuplicate = err instanceof Error && 'code' in err && (err as { code?: string }).code === 'P2002';
       if (isDuplicate) {
         res.status(409).json({ error: 'User already exists.' });
         return;
@@ -71,7 +72,7 @@ router.post(
 
     try {
       const normalizedEmail = sanitizeEmail(email);
-      const user = await User.findOne({ email: normalizedEmail });
+      const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
       if (!user) {
         res.status(401).json({ error: 'Invalid credentials.' });
@@ -85,7 +86,7 @@ router.post(
         return;
       }
 
-      const token = issueToken(user._id.toString(), user.email);
+      const token = issueToken(user.id, user.email);
       res.json({ token, expiresIn: TOKEN_TTL });
     } catch (err: unknown) {
       console.error('[Login Error]', err);

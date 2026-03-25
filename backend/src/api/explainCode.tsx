@@ -3,6 +3,7 @@ import multer from 'multer';
 import OpenAI from 'openai';
 import path from 'path';
 import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
+import { prisma } from '../database/prismaClient';
 
 const router = Router();
 
@@ -32,7 +33,7 @@ const client = new OpenAI({
 /**
  * POST /api/explain
  * Body: multipart/form-data with field "file" containing a .js file
- * Returns: { explanation: string }
+ * Returns: { explanation: string, analysisId: string }
  */
 router.post('/explain', requireAuth, upload.single('file'), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!req.file) {
@@ -65,13 +66,24 @@ ${code}
     });
 
     const explanation = response.choices[0]?.message?.content ?? 'No explanation returned.';
-    res.json({ explanation });
+
+    // Persist to database 
+    const saved = await prisma.analysis.create({
+      data: {
+        fileName: req.file.originalname,
+        explanation,
+        userId: req.user?.id || null, 
+      },
+    });
+
+    res.json({ explanation, analysisId: saved.id });
   } catch (err: unknown) {
     console.error('[Grok Error]', err);
     const message = err instanceof Error ? err.message : 'Grok API call failed';
     res.status(500).json({ error: `AI error: ${message}` });
   }
 });
+
 
 // Multer / file-type error handler
 router.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

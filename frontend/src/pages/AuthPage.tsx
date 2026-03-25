@@ -17,8 +17,9 @@ export default function AuthPage() {
     setError('');
     setLoading(true);
 
-    const action = mode === 'login' ? login : register;
-    const result = await action(email, password);
+    const result = mode === 'login' 
+      ? await login(email, password) 
+      : await register(email, password, fullName);
 
     if (result.ok) {
       navigate('/dashboard');
