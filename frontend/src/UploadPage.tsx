@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
 import type { DragEvent, ChangeEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { API_BASE_URL } from './config';
 
-const API_URL = 'http://localhost:5050/api/explain';
+const API_URL = `${API_BASE_URL}/api/explain`;
 
 // Color palette — base: #101a30
 const C = {
@@ -55,7 +56,7 @@ export default function UploadPage() {
     setError('');
 
     try {
-      const res = await fetch('http://localhost:5050/api/auth/login', {
+      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
