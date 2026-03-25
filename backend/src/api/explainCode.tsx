@@ -1,7 +1,8 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import multer from 'multer';
 import OpenAI from 'openai';
 import path from 'path';
+import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
 
 const router = Router();
 
@@ -33,7 +34,7 @@ const client = new OpenAI({
  * Body: multipart/form-data with field "file" containing a .js file
  * Returns: { explanation: string }
  */
-router.post('/explain', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
+router.post('/explain', requireAuth, upload.single('file'), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!req.file) {
     res.status(400).json({ error: 'No file uploaded. Please upload a .js file.' });
     return;
