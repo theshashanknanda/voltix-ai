@@ -1,4 +1,4 @@
-import { Router, Response, NextFunction } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import OpenAI from 'openai';
 import path from 'path';

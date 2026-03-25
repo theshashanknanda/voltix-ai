@@ -26,13 +26,17 @@ app.get('/health', (_req: Request, res: Response) => {
 app.use('/api/auth', authRouter);
 app.use('/api', explainRouter);
 
-connectMongo()
-  .then(() => {
-    app.listen(port, () => {
-      console.log(`Server is running at http://localhost:${port}`);
+if (process.env.NODE_ENV !== 'test') {
+  connectMongo()
+    .then(() => {
+      app.listen(port, () => {
+        console.log(`Server is running at http://localhost:${port}`);
+      });
+    })
+    .catch((err: unknown) => {
+      console.error('[Mongo Connection Error]', err);
+      process.exit(1);
     });
-  })
-  .catch((err: unknown) => {
-    console.error('[Mongo Connection Error]', err);
-    process.exit(1);
-  });
+}
+
+export default app;
