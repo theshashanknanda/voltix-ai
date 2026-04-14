@@ -32,10 +32,10 @@ model User {
 // userId is nullable until auth is wired up.
 // ──────────────────────────────────────────
 model Analysis {
-  id          String   @id @default(uuid())
-  fileName    String
-  explanation String // AI-generated markdown text
-  createdAt   DateTime @default(now())
+  id            String   @id @default(uuid())
+  repositoryUrl String
+  explanation   String   // AI-generated markdown text
+  createdAt     DateTime @default(now())
 
   // Loose end for auth teammate — fill in userId once auth is done
   userId String?

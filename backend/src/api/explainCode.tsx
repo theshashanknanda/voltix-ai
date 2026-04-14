@@ -70,9 +70,9 @@ ${code}
     // Persist to database 
     const saved = await prisma.analysis.create({
       data: {
-        fileName: req.file.originalname,
+        repositoryUrl: req.file.originalname,
         explanation,
-        userId: req.user?.id || null, 
+        userId: req.user?.id || null,
       },
     });
 

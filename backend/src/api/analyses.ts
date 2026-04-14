@@ -11,7 +11,7 @@ router.get('/analyses', requireAuth, async (req: AuthenticatedRequest, res: Resp
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
-        fileName: true,
+        repositoryUrl: true,
         createdAt: true,
         explanation: true,
         userId: true,
