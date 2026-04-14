@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import explainRouter from './api/explainCode';
 import authRouter from './api/auth';
+import uploadRepoRouter from './api/uploadRepo';
 import analysesRouter from './api/analyses';
 
 const app = express();
@@ -25,6 +26,7 @@ app.get('/health', (_req: Request, res: Response) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api', explainRouter);
+app.use('/api', uploadRepoRouter);
 app.use('/api', analysesRouter);
 
 // For local development and testing
