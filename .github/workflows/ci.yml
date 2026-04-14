@@ -1,3 +1,8 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [dev]
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -19,4 +24,3 @@ jobs:
 
       - name: Run tests
         run: npm test
-
