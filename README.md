@@ -1,4 +1,4 @@
-![CI Status](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/ci.yml/badge.svg)
+![CI Status](https://github.com/theshashanknanda/voltix-ai/actions/workflows/ci.yml/badge.svg)
 
 # ⚡ Voltix AI
 
