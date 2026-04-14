@@ -1,28 +1,21 @@
-name: CI/CD Pipeline
-
-on:
-  push:
-    branches: [dev]
-
 jobs:
   test:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: voltix-ai-backend  
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Debug repo structure
         run: ls -R
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'npm'
 
-      - run: npm install
-      - run: npm test
+      - name: Install dependencies
+        run: npm install
 
+      - name: Run tests
+        run: npm test
