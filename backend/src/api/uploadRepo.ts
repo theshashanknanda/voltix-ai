@@ -14,7 +14,7 @@ const SUPPORTED_EXTENSIONS = new Set([
   '.js', '.ts', '.tsx', '.jsx', '.json', '.md', '.html', '.css',
   '.yml', '.yaml', '.txt', '.svg', '.xml', '.csv', '.mdx',
   '.py', '.java', '.go', '.rb', '.rs', '.sh', '.toml', '.env',
-  '.gitignore', '.dockerignore', '.dockerfile',
+  '.gitignore', '.dockerignore', '.dockerfile', '.png'
 ]);
 
 const EXTENSION_TO_LANGUAGE: Record<string, string> = {
