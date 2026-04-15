@@ -33,29 +33,56 @@ const client = new OpenAI({
 /**
  * POST /api/explain
  * Body: multipart/form-data with field "file" containing a .js file
+ *   OR  JSON body: { code: string, filename: string, language?: string }
  * Returns: { explanation: string, analysisId: string }
  */
-router.post('/explain', requireAuth, upload.single('file'), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  if (!req.file) {
-    res.status(400).json({ error: 'No file uploaded. Please upload a .js file.' });
-    return;
+router.post('/explain', requireAuth, (req: AuthenticatedRequest, res: Response, next) => {
+  // If the request is JSON (from code viewer), skip multer
+  if (req.is('application/json')) {
+    return next();
+  }
+  // Otherwise, handle as file upload
+  upload.single('file')(req, res, next);
+}, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  let code: string;
+  let filename: string;
+  let language: string;
+
+  if (req.is('application/json') || req.body?.code) {
+    // JSON body path (from code viewer)
+    code = req.body.code;
+    filename = req.body.filename || 'unknown';
+    language = req.body.language || 'text';
+
+    if (!code || !code.trim()) {
+      res.status(400).json({ error: 'Code content is empty.' });
+      return;
+    }
+  } else {
+    // File upload path (original)
+    if (!req.file) {
+      res.status(400).json({ error: 'No file uploaded. Please upload a .js file.' });
+      return;
+    }
+    code = req.file.buffer.toString('utf-8');
+    filename = req.file.originalname;
+    language = 'javascript';
+
+    if (!code.trim()) {
+      res.status(400).json({ error: 'Uploaded file is empty.' });
+      return;
+    }
   }
 
-  const code = req.file.buffer.toString('utf-8');
-
-  if (!code.trim()) {
-    res.status(400).json({ error: 'Uploaded file is empty.' });
-    return;
-  }
-
-  const prompt = `You are a senior JavaScript developer. Explain the following JavaScript code clearly and concisely.
+  const prompt = `You are a senior software developer. Explain the following ${language} code clearly and concisely.
 Break your explanation into:
 1. **Overview** – what the code does at a high level
 2. **Key Functions / Logic** – walk through the important parts
 3. **Potential Issues** – any bugs or improvements you notice
 
+File: ${filename}
 Code:
-\`\`\`javascript
+\`\`\`${language}
 ${code}
 \`\`\``;
 
@@ -70,7 +97,7 @@ ${code}
     // Persist to database 
     const saved = await prisma.analysis.create({
       data: {
-        repositoryUrl: req.file.originalname,
+        repositoryUrl: filename,
         explanation,
         userId: req.user?.id || null,
       },
