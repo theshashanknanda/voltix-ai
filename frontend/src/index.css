@@ -751,7 +751,7 @@ a {
 
 .code-layout {
 	display: grid;
-	grid-template-columns: 1.6fr 1fr;
+	grid-template-columns: 2.3fr 1fr;
 	gap: 18px;
 	align-items: start;
 }
@@ -773,7 +773,7 @@ a {
 	border-right: 1px solid var(--border);
 	display: flex;
 	flex-direction: column;
-	max-height: 750px;
+	max-height: calc(100vh - 220px);
 }
 
 .file-tree-title {
@@ -824,16 +824,81 @@ a {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-family: 'JetBrains Mono', monospace;
 	font-size: 0.72rem;
+}
+
+/* File Tree Component */
+.file-tree-container {
+	display: flex;
+	flex-direction: column;
+	padding: 4px 0;
+}
+
+.tree-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	font-size: 0.76rem;
+	color: var(--muted);
+	cursor: pointer;
+	transition: all 0.15s ease;
+	user-select: none;
+	border-left: 2px solid transparent;
+}
+
+.tree-item:hover {
+	background: rgba(125, 211, 252, 0.05);
+	color: var(--text);
+}
+
+.tree-item.folder {
+	font-weight: 500;
+}
+
+.tree-item.active {
+	background: rgba(34, 197, 94, 0.08);
+	color: var(--accent);
+	border-left-color: var(--accent);
+}
+
+.tree-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	color: var(--muted);
+}
+
+.tree-item.active .tree-icon {
+	color: var(--accent);
+}
+
+.tree-item.folder .tree-icon {
+	opacity: 0.8;
+}
+
+.tree-icon .chevron {
+	transition: transform 0.2s ease;
+}
+
+.tree-icon .chevron.expanded {
+	transform: rotate(90deg);
+}
+
+.tree-name {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font-family: 'JetBrains Mono', monospace;
 }
 
 /* Code Viewer component */
 .code-viewer {
 	display: flex;
 	flex-direction: column;
-	min-height: 400px;
-	max-height: 750px;
+	min-height: 300px;
+	max-height: calc(100vh - 220px);
 }
 
 .code-viewer-header {
@@ -908,10 +973,50 @@ a {
 
 .code-viewer-body {
 	flex: 1;
-	overflow: auto;
+	overflow: scroll !important;
 	background: rgba(10, 14, 28, 0.85);
 	scrollbar-width: thin;
-	scrollbar-color: var(--border) transparent;
+	scrollbar-color: var(--muted) transparent;
+}
+
+.code-viewer-body pre {
+	overflow: visible !important;
+	width: max-content;
+	min-width: 100%;
+}
+
+.code-viewer-body::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+
+.code-viewer-body::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.code-viewer-body::-webkit-scrollbar-thumb {
+	background: var(--muted);
+	border-radius: 10px;
+	border: 1px solid var(--border);
+}
+
+.code-viewer-body::-webkit-scrollbar-thumb:hover {
+	background: var(--text);
+}
+
+.code-viewer-body.stale {
+	opacity: 0.65;
+	transition: opacity 0.2s ease;
+}
+
+.code-viewer-stale-preview {
+	margin: 0;
+	padding: 16px;
+	font-family: 'JetBrains Mono', monospace;
+	font-size: 0.82rem;
+	line-height: 1.65;
+	color: var(--muted);
+	white-space: pre;
 }
 
 .code-viewer-empty {
@@ -946,7 +1051,7 @@ a {
 .code-layout-right {
 	position: sticky;
 	top: 20px;
-	max-height: 750px;
+	max-height: calc(100vh - 220px);
 	overflow-y: auto;
 	scrollbar-width: thin;
 	scrollbar-color: var(--border) transparent;

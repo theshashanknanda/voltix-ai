@@ -1,3 +1,4 @@
+import { memo, useMemo, useDeferredValue } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -27,9 +28,13 @@ interface Props {
   analyzing?: boolean;
 }
 
-export default function CodeViewer({ filename, content, language, onAnalyze, analyzing }: Props) {
-  const lang = language || detectLanguage(filename);
+const CodeViewer = memo(function CodeViewer({ filename, content, language, onAnalyze, analyzing }: Props) {
+  const lang = useMemo(() => language || detectLanguage(filename), [filename, language]);
+  const deferredContent = useDeferredValue(content);
+  const isStale = deferredContent !== content;
+  
   const isEmpty = !content.trim();
+  const isLargeFile = content.length > 30000;
 
   return (
     <div className="code-viewer">
@@ -71,7 +76,7 @@ export default function CodeViewer({ filename, content, language, onAnalyze, ana
       </div>
 
       {/* code body */}
-      <div className="code-viewer-body">
+      <div className={`code-viewer-body ${isStale ? 'stale' : ''}`}>
         {isEmpty ? (
           <div className="code-viewer-empty">
             <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -81,24 +86,31 @@ export default function CodeViewer({ filename, content, language, onAnalyze, ana
             </svg>
             <p>This file is empty</p>
           </div>
+        ) : isStale ? (
+          <pre className="code-viewer-stale-preview">
+            <code>{content}</code>
+          </pre>
         ) : (
           <SyntaxHighlighter
             language={lang}
             style={oneDark}
-            showLineNumbers
-            wrapLongLines
+            showLineNumbers={!isLargeFile}
+            wrapLongLines={!isLargeFile}
             customStyle={{
               margin: 0,
               borderRadius: 0,
               background: 'transparent',
               fontSize: '0.82rem',
               lineHeight: '1.65',
+              overflow: 'visible',
             }}
           >
-            {content}
+            {deferredContent}
           </SyntaxHighlighter>
         )}
       </div>
     </div>
   );
-}
+});
+
+export default CodeViewer;

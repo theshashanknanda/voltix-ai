@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { DragEvent, ChangeEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../auth/AuthContext';
 import { API_BASE_URL } from '../config';
 import CodeViewer from '../components/CodeViewer';
+import FileTree from '../components/FileTree';
 
 const API_URL = `${API_BASE_URL}/api/explain`;
 const IMPORT_URL = `${API_BASE_URL}/api/upload-repo`;
@@ -183,6 +184,13 @@ export default function DashboardPage() {
       setStatus('error');
     }
   };
+
+  const handleFileSelect = useCallback((f: ImportedFile) => {
+    setSelectedFile(f);
+    setExp('');
+    setStatus('idle');
+    setError('');
+  }, []);
 
   /* ===== CODE VIEWER LAYOUT (file selected) ===== */
   const showCodeViewerLayout = selectedFile !== null;
@@ -412,24 +420,11 @@ export default function DashboardPage() {
                 <div className="file-tree-sidebar">
                   <div className="file-tree-title">Files</div>
                   <div className="file-tree-list">
-                    {importedFiles.map(f => (
-                      <div
-                        key={f.path}
-                        className={`file-tree-item ${f.path === selectedFile?.path ? 'active' : ''}`}
-                        onClick={() => {
-                          setSelectedFile(f);
-                          setExp('');
-                          setStatus('idle');
-                          setError('');
-                        }}
-                      >
-                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                        </svg>
-                        <span>{f.path}</span>
-                      </div>
-                    ))}
+                    <FileTree
+                      files={importedFiles}
+                      selectedFilePath={selectedFile?.path}
+                      onFileSelect={handleFileSelect}
+                    />
                   </div>
                 </div>
 
