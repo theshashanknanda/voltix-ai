@@ -1,3 +1,5 @@
+![CI Status](https://github.com/theshashanknanda/voltix-ai/actions/workflows/ci.yml/badge.svg)
+
 # ⚡ Voltix AI
 
 Voltix AI is an intelligent web-based assistant designed to help developers understand, maintain, and improve existing codebases. Instead of focusing on generating new code, Voltix AI emphasizes **code comprehension, onboarding support, maintainability insights, and documentation quality**.
