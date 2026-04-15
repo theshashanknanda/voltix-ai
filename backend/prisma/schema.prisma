@@ -44,3 +44,4 @@ model Analysis {
 
   @@map("analyses")
 }
+
