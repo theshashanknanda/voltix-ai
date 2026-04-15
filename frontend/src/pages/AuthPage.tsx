@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../auth/AuthContext';
+import { useAuth } from '../auth/authContext';
 
 export default function AuthPage() {
   const { login, register } = useAuth();
@@ -38,6 +38,8 @@ export default function AuthPage() {
           <Link to="/">Voltix AI</Link>
         </div>
         <div className="nav-actions">
+          <Link className="btn btn-ghost" to="/">Landing</Link>
+          <Link className="btn btn-ghost" to="/dashboard">Dashboard</Link>
           <span className="eyebrow">Login & Signup</span>
         </div>
       </header>

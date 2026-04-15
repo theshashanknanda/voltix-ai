@@ -1,19 +1,7 @@
-import { createContext, useContext, useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { API_BASE_URL } from '../config';
-
-type AuthResult = { ok: true } | { ok: false; error: string };
-
-interface AuthContextValue {
-  token: string;
-  email: string;
-  isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<AuthResult>;
-  register: (email: string, password: string, name?: string) => Promise<AuthResult>;
-  logout: () => void;
-}
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+import { AuthContext, type AuthContextValue, type AuthResult } from './authContext';
 
 const tokenKey = 'voltix_token';
 const emailKey = 'voltix_email';
@@ -69,16 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(emailKey);
   };
 
-  const value = useMemo(
-    () => ({ token, email, isAuthenticated: Boolean(token), login, register, logout }),
-    [token, email],
-  );
+  const value: AuthContextValue = {
+    token,
+    email,
+    isAuthenticated: Boolean(token),
+    login,
+    register,
+    logout,
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
 }
