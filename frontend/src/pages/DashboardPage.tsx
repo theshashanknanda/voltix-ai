@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { API_BASE_URL } from '../config';
 
 const API_URL = `${API_BASE_URL}/api/explain`;
-const IMPORT_URL = `${API_BASE_URL}/api/import-github`;
+const IMPORT_URL = `${API_BASE_URL}/api/upload-repo`;
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
 type ImportStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -115,7 +115,7 @@ export default function DashboardPage() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ repoUrl: trimmed }),
+        body: JSON.stringify({ url: trimmed }),
       });
 
       const data = await res.json();
