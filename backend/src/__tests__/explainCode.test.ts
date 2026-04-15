@@ -5,7 +5,6 @@ import OpenAI from 'openai';
 // TEST 3--- Explain API tests
 // Define the mockCreate function before mocking the client
 const mockCreate = jest.fn();
-const mockPrismaCreate = jest.fn().mockResolvedValue({ id: 'test-analysis-id' });
 
 // Mock the Groq-compatible OpenAI client
 jest.mock('openai', () => {
@@ -17,16 +16,6 @@ jest.mock('openai', () => {
     },
   }));
 });
-
-// Mock Prisma client so tests do not require a real database connection
-jest.mock('../database/prismaClient', () => ({
-  __esModule: true,
-  prisma: {
-    analysis: {
-      create: mockPrismaCreate,
-    },
-  },
-}));
 
 // Mock requireAuth middleware
 jest.mock('../middleware/requireAuth', () => ({

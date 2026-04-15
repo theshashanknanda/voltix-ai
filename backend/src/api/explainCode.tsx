@@ -3,7 +3,6 @@ import multer from 'multer';
 import OpenAI from 'openai';
 import path from 'path';
 import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
-import { prisma } from '../database/prismaClient';
 
 const router = Router();
 
@@ -34,7 +33,7 @@ const client = new OpenAI({
  * POST /api/explain
  * Body: multipart/form-data with field "file" containing a .js file
  *   OR  JSON body: { code: string, filename: string, language?: string }
- * Returns: { explanation: string, analysisId: string }
+ * Returns: { explanation: string }
  */
 router.post('/explain', requireAuth, (req: AuthenticatedRequest, res: Response, next) => {
   // If the request is JSON (from code viewer), skip multer
@@ -93,17 +92,7 @@ ${code}
     });
 
     const explanation = response.choices[0]?.message?.content ?? 'No explanation returned.';
-
-    // Persist to database 
-    const saved = await prisma.analysis.create({
-      data: {
-        repositoryUrl: filename,
-        explanation,
-        userId: req.user?.id || null,
-      },
-    });
-
-    res.json({ explanation, analysisId: saved.id });
+    res.json({ explanation });
   } catch (err: unknown) {
     console.error('[Grok Error]', err);
     const message = err instanceof Error ? err.message : 'Grok API call failed';

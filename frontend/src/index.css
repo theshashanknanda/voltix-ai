@@ -456,6 +456,32 @@ a {
 	color: var(--muted);
 }
 
+.status-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 14px;
+	border-radius: 12px;
+	border: 1px solid var(--border);
+	background: rgba(12, 17, 34, 0.6);
+	transition: border-color 0.2s ease;
+}
+
+.status-main {
+	flex: 1;
+}
+
+.status-actions {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.status-row:hover {
+	border-color: var(--accent-2);
+}
+
 
 .status-list li.ok::before {
 	content: '✓';
@@ -467,6 +493,48 @@ a {
 	font-size: 0.9rem;
 	color: var(--muted);
 	line-height: 1.7;
+}
+
+.analysis-actions {
+	display: flex;
+	gap: 12px;
+	margin-top: 16px;
+	align-items: center;
+}
+
+.file-tree {
+	max-height: 360px;
+	overflow: auto;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 12px 14px;
+	background: rgba(12, 17, 34, 0.6);
+}
+
+.tree {
+	list-style: none;
+	margin: 6px 0 0;
+	padding-left: 16px;
+	display: grid;
+	gap: 6px;
+}
+
+.tree-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 0.9rem;
+	color: var(--text);
+}
+
+.tree-item.folder::before {
+	content: '>';
+	color: var(--accent-2);
+}
+
+.tree-item.file::before {
+	content: '-';
+	color: var(--muted);
 }
 
 .pill {

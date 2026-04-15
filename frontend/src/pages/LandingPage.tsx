@@ -1,6 +1,9 @@
 import { Link } from 'react-router-dom';
+import { useAuth } from '../auth/authContext';
 
 export default function LandingPage() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <div className="page">
       <header className="nav">
@@ -9,7 +12,10 @@ export default function LandingPage() {
           <span>Voltix AI</span>
         </div>
         <div className="nav-actions">
-          <Link className="btn btn-ghost" to="/auth">Sign in</Link>
+          <Link className="btn btn-ghost" to="/auth">Auth</Link>
+          <Link className="btn btn-primary" to="/dashboard">
+            {isAuthenticated ? 'Dashboard' : 'Try Dashboard'}
+          </Link>
         </div>
       </header>
 
