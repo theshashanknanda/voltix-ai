@@ -38,6 +38,11 @@ describe('POST /api/explain', () => {
     jest.clearAllMocks();
   });
 
+  function promptText(): string {
+    const arg = mockCreate.mock.calls[0][0] as { messages: { content: string }[] };
+    return arg.messages[0].content;
+  }
+
   // TEST 3.1
   it('should explain a valid .js file successfully', async () => {
     const mockExplanation = 'This is a senior JavaScript explanation.';
@@ -50,18 +55,73 @@ describe('POST /api/explain', () => {
       .attach('file', Buffer.from('const x = 10;'), 'test.js');
 
     expect(response.status).toBe(200);
-    expect(response.body).toHaveProperty('explanation', mockExplanation);
-    expect(mockCreate).toHaveBeenCalled();
+    expect(response.body.explanation).toBe(mockExplanation);
+    expect(response.body.explanation.length).toBeGreaterThan(0);
+    expect(promptText()).toContain('following javascript code');
+    expect(promptText()).toContain('```javascript');
+  });
+
+  it.each([
+    ['widget.ts', 'typescript', 'const n: number = 1;'],
+    ['Widget.tsx', 'tsx', 'export const A = () => null;'],
+    ['Widget.jsx', 'jsx', 'export const A = () => null;'],
+    ['script.py', 'python', 'n = 1\n'],
+    ['Main.java', 'java', 'class Main {}'],
+    ['main.go', 'go', 'package main\n'],
+  ])('explains a %s upload and labels the prompt as %s', async (filename, language, source) => {
+    const mockExplanation = `Explained ${language}.`;
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: mockExplanation } }],
+    });
+
+    const response = await request(app)
+      .post('/api/explain')
+      .attach('file', Buffer.from(source), filename);
+
+    expect(response.status).toBe(200);
+    expect(response.body.explanation).toBe(mockExplanation);
+    expect(response.body.explanation.length).toBeGreaterThan(0);
+    expect(promptText()).toContain(`following ${language} code`);
+    expect(promptText()).toContain('```' + language);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
   // TEST 3.2
-  it('should reject non-.js files with 400 error', async () => {
+  it('should reject an unsupported extension with 400', async () => {
     const response = await request(app)
       .post('/api/explain')
-      .attach('file', Buffer.from('hello world'), 'test.txt');
+      .attach('file', Buffer.from('MZ'), 'tool.exe');
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toContain('Only .js files are allowed');
+    expect(response.body.error).toContain('Unsupported file type ".exe"');
+    expect(response.body.error).toContain('.ts');
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('should reject an empty allowed file with 400', async () => {
+    const response = await request(app)
+      .post('/api/explain')
+      .attach('file', Buffer.from(''), 'empty.ts');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('Uploaded file is empty.');
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('explains a JSON body with the language the client sends', async () => {
+    const mockExplanation = 'JSON path still works.';
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: mockExplanation } }],
+    });
+
+    const response = await request(app)
+      .post('/api/explain')
+      .send({ code: 'print(1)', filename: 'notes.txt', language: 'python' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.explanation).toBe(mockExplanation);
+    expect(promptText()).toContain('following python code');
+    expect(promptText()).toContain('notes.txt');
   });
 
   // TEST 3.3

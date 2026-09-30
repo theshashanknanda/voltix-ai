@@ -10,6 +10,8 @@ import FileTree from '../components/FileTree';
 const API_URL = `${API_BASE_URL}/api/explain`;
 const REVIEW_URL = `${API_BASE_URL}/api/maintainability`;
 const IMPORT_URL = `${API_BASE_URL}/api/upload-repo`;
+const UPLOAD_EXTENSIONS = ['.js', '.ts', '.tsx', '.jsx', '.py', '.java', '.go'];
+const UPLOAD_ACCEPT = UPLOAD_EXTENSIONS.join(',');
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
 type ImportStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -158,8 +160,9 @@ export default function DashboardPage() {
   };
 
   const pick = (f: File) => {
-    if (!f.name.endsWith('.js')) {
-      setError('Only .js files are accepted.');
+    const allowed = UPLOAD_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext));
+    if (!allowed) {
+      setError(`Only ${UPLOAD_EXTENSIONS.join(', ')} files are accepted.`);
       setFile(null);
       return;
     }
@@ -471,7 +474,7 @@ export default function DashboardPage() {
           <section className="workspace-grid simple">
             <div className="card upload-card">
               <h2>Upload a file</h2>
-              <p className="muted">Drop a single .js file to get an explanation.</p>
+              <p className="muted">Drop a source file ({UPLOAD_EXTENSIONS.join(', ')}) to get an explanation.</p>
               <div
                 className={`dropzone ${dragging ? 'active' : ''}`}
                 onClick={() => inputRef.current?.click()}
@@ -482,7 +485,7 @@ export default function DashboardPage() {
                 <div className="drop-icon" />
                 <p>{file ? file.name : 'Drop repository archive here'}</p>
                 <span>or browse local files</span>
-                <input ref={inputRef} type="file" accept=".js" onChange={onFileChange} />
+                <input ref={inputRef} type="file" accept={UPLOAD_ACCEPT} onChange={onFileChange} />
               </div>
 
               <div className="github-import-section">
