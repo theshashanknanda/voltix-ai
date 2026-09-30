@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { API_BASE_URL } from './config';
 
 const API_URL = `${API_BASE_URL}/api/explain`;
+const UPLOAD_EXTENSIONS = ['.js', '.ts', '.tsx', '.jsx', '.py', '.java', '.go'];
 
 // Color palette — base: #101a30
 const C = {
@@ -34,7 +35,8 @@ export default function UploadPage() {
   const inputRef                   = useRef<HTMLInputElement>(null);
 
   const pick = (f: File) => {
-    if (!f.name.endsWith('.js')) { setError('Only .js files are accepted.'); setFile(null); return; }
+    const allowed = UPLOAD_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext));
+    if (!allowed) { setError(`Only ${UPLOAD_EXTENSIONS.join(', ')} files are accepted.`); setFile(null); return; }
     setError(''); setFile(f); setStatus('idle'); setExp('');
   };
 
@@ -114,10 +116,10 @@ export default function UploadPage() {
       <div style={{ margin:'20px 32px 0', background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, padding:'28px 32px' }}>
         <h1 style={{ margin:'0 0 8px', fontSize:'1.45rem', fontWeight:700 }}>Upload your file and get an AI explanation</h1>
         <p style={{ margin:'0 0 18px', color:C.muted, fontSize:'0.9rem', fontFamily:'monospace' }}>
-          Drop a single <code style={{ background:C.border, borderRadius:4, padding:'1px 5px', color:'#79c0ff' }}>.js</code> file — Voltix AI will explain what it does.
+          Drop a source file ({UPLOAD_EXTENSIONS.join(', ')}) — Voltix AI will explain what it does.
         </p>
         <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
-          {['Max size: 1 MB', 'Format: .js only', 'Powered by Groq · Llama 3.3'].map(t => (
+          {['Max size: 1 MB', `Format: ${UPLOAD_EXTENSIONS.join(', ')}`, 'Powered by Groq · Llama 3.3'].map(t => (
             <span key={t} style={{ background:C.border, border:`1px solid ${C.dim}`, borderRadius:6, padding:'4px 12px', fontSize:'0.78rem', color:C.muted, fontFamily:'monospace' }}>{t}</span>
           ))}
         </div>
@@ -172,7 +174,7 @@ export default function UploadPage() {
               {file ? file.name : 'Drop repository archive here'}
             </p>
             <p style={{ margin:0, color:C.dim, fontSize:'0.78rem' }}>or browse local files</p>
-            <input ref={inputRef} type="file" accept=".js" style={{ display:'none' }} onChange={onFileChange} />
+            <input ref={inputRef} type="file" accept={UPLOAD_EXTENSIONS.join(',')} style={{ display:'none' }} onChange={onFileChange} />
           </div>
 
           {errorMsg && (

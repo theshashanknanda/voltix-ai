@@ -26,9 +26,11 @@ interface Props {
   language?: string;
   onAnalyze?: () => void;
   analyzing?: boolean;
+  onReview?: () => void;
+  reviewing?: boolean;
 }
 
-const CodeViewer = memo(function CodeViewer({ filename, content, language, onAnalyze, analyzing }: Props) {
+const CodeViewer = memo(function CodeViewer({ filename, content, language, onAnalyze, analyzing, onReview, reviewing }: Props) {
   const lang = useMemo(() => language || detectLanguage(filename), [filename, language]);
   const deferredContent = useDeferredValue(content);
   const isStale = deferredContent !== content;
@@ -49,29 +51,51 @@ const CodeViewer = memo(function CodeViewer({ filename, content, language, onAna
           <span className="code-viewer-lang-badge">{lang}</span>
         </div>
 
-        {onAnalyze && (
-          <button
-            id="analyze-ai-btn"
-            className="btn btn-analyze"
-            type="button"
-            disabled={isEmpty || analyzing}
-            onClick={onAnalyze}
-          >
-            {analyzing ? (
-              <>
-                <span className="spinner-sm" />
-                Analyzing…
-              </>
-            ) : (
-              <>
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-                </svg>
-                Analyze with AI
-              </>
+        {(onAnalyze || onReview) && (
+          <div className="code-viewer-actions">
+            {onReview && (
+              <button
+                id="maintainability-btn"
+                className="btn btn-analyze"
+                type="button"
+                disabled={isEmpty || reviewing}
+                onClick={onReview}
+              >
+                {reviewing ? (
+                  <>
+                    <span className="spinner-sm" />
+                    Reviewing…
+                  </>
+                ) : (
+                  'Code review'
+                )}
+              </button>
             )}
-          </button>
+            {onAnalyze && (
+              <button
+                id="analyze-ai-btn"
+                className="btn btn-analyze"
+                type="button"
+                disabled={isEmpty || analyzing}
+                onClick={onAnalyze}
+              >
+                {analyzing ? (
+                  <>
+                    <span className="spinner-sm" />
+                    Analyzing…
+                  </>
+                ) : (
+                  <>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                    </svg>
+                    Analyze with AI
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         )}
       </div>
 

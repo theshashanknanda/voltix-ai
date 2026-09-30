@@ -8,7 +8,10 @@ import CodeViewer from '../components/CodeViewer';
 import FileTree from '../components/FileTree';
 
 const API_URL = `${API_BASE_URL}/api/explain`;
+const REVIEW_URL = `${API_BASE_URL}/api/maintainability`;
 const IMPORT_URL = `${API_BASE_URL}/api/upload-repo`;
+const UPLOAD_EXTENSIONS = ['.js', '.ts', '.tsx', '.jsx', '.py', '.java', '.go'];
+const UPLOAD_ACCEPT = UPLOAD_EXTENSIONS.join(',');
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
 type ImportStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -38,6 +41,52 @@ type AnalysisSummary = {
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
+type Finding = {
+  severity: 'low' | 'medium' | 'high';
+  message: string;
+};
+
+function MaintainabilityPanel({
+  status,
+  score,
+  summary,
+  review,
+  error,
+}: {
+  status: Status;
+  score: number | null;
+  summary: string;
+  review: Finding[];
+  error: string;
+}) {
+  if (status === 'idle') return null;
+  return (
+    <div className="maintainability-panel">
+      <h3>Maintainability</h3>
+      {status === 'loading' && <p className="muted">Scoring this file…</p>}
+      {status === 'error' && error && <div className="error-banner">{error}</div>}
+      {status === 'success' && (
+        <>
+          <p className="maintainability-score">{score}<span> / 100</span></p>
+          <p>{summary}</p>
+          {review.length === 0 ? (
+            <p className="muted">No findings.</p>
+          ) : (
+            <ul className="finding-list">
+              {review.map((finding, index) => (
+                <li key={`${finding.severity}-${index}`} className="finding">
+                  <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
+                  <span>{finding.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { email, logout, token } = useAuth();
   const [file, setFile] = useState<File | null>(null);
@@ -62,6 +111,11 @@ export default function DashboardPage() {
   const [importedFiles, setImportedFiles] = useState<ImportedFile[]>([]);
   const [importMeta, setImportMeta] = useState<ImportMeta | null>(null);
   const [selectedFile, setSelectedFile] = useState<ImportedFile | null>(null);
+  const [reviewStatus, setReviewStatus] = useState<Status>('idle');
+  const [score, setScore] = useState<number | null>(null);
+  const [summary, setSummary] = useState('');
+  const [review, setReview] = useState<Finding[]>([]);
+  const [reviewError, setReviewError] = useState('');
 
   useEffect(() => {
     const fetchAnalyses = async () => {
@@ -106,8 +160,9 @@ export default function DashboardPage() {
   };
 
   const pick = (f: File) => {
-    if (!f.name.endsWith('.js')) {
-      setError('Only .js files are accepted.');
+    const allowed = UPLOAD_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext));
+    if (!allowed) {
+      setError(`Only ${UPLOAD_EXTENSIONS.join(', ')} files are accepted.`);
       setFile(null);
       return;
     }
@@ -118,6 +173,15 @@ export default function DashboardPage() {
     setSaveState('idle');
     setSaveError('');
     setLatestAnalysisId(null);
+    clearReview();
+  };
+
+  const clearReview = () => {
+    setReviewStatus('idle');
+    setScore(null);
+    setSummary('');
+    setReview([]);
+    setReviewError('');
   };
 
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
@@ -215,6 +279,7 @@ export default function DashboardPage() {
     setSelectedFile(null);
     setExp('');
     setStatus('idle');
+    clearReview();
   };
 
   const analyzeSelectedFile = async () => {
@@ -249,6 +314,69 @@ export default function DashboardPage() {
     }
   };
 
+  const readReview = async (res: Response) => {
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Code review failed');
+    setScore(typeof data.score === 'number' ? data.score : null);
+    setSummary(typeof data.summary === 'string' ? data.summary : '');
+    setReview(Array.isArray(data.review) ? data.review : []);
+    setReviewStatus('success');
+  };
+
+  const reviewSelectedFile = async () => {
+    if (!selectedFile || !token) return;
+    setReviewStatus('loading');
+    setReviewError('');
+    setScore(null);
+    setSummary('');
+    setReview([]);
+    try {
+      const res = await fetch(REVIEW_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          code: selectedFile.content,
+          filename: selectedFile.name,
+          language: selectedFile.language,
+        }),
+      });
+      await readReview(res);
+    } catch (err: unknown) {
+      setReviewError(err instanceof Error ? err.message : 'Code review failed');
+      setReviewStatus('error');
+    }
+  };
+
+  const reviewUpload = async () => {
+    if (!file) return;
+    if (!token) {
+      setReviewError('Please login first.');
+      setReviewStatus('error');
+      return;
+    }
+    setReviewStatus('loading');
+    setReviewError('');
+    setScore(null);
+    setSummary('');
+    setReview([]);
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const res = await fetch(REVIEW_URL, {
+        method: 'POST',
+        body: form,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await readReview(res);
+    } catch (err: unknown) {
+      setReviewError(err instanceof Error ? err.message : 'Code review failed');
+      setReviewStatus('error');
+    }
+  };
+
   const handleFileSelect = useCallback((f: ImportedFile) => {
     setSelectedFile(f);
     setExp('');
@@ -257,6 +385,11 @@ export default function DashboardPage() {
     setSaveState('idle');
     setSaveError('');
     setLatestAnalysisId(null);
+    setReviewStatus('idle');
+    setScore(null);
+    setSummary('');
+    setReview([]);
+    setReviewError('');
   }, []);
 
   const saveAnalysis = async () => {
@@ -341,7 +474,7 @@ export default function DashboardPage() {
           <section className="workspace-grid simple">
             <div className="card upload-card">
               <h2>Upload a file</h2>
-              <p className="muted">Drop a single .js file to get an explanation.</p>
+              <p className="muted">Drop a source file ({UPLOAD_EXTENSIONS.join(', ')}) to get an explanation.</p>
               <div
                 className={`dropzone ${dragging ? 'active' : ''}`}
                 onClick={() => inputRef.current?.click()}
@@ -352,7 +485,7 @@ export default function DashboardPage() {
                 <div className="drop-icon" />
                 <p>{file ? file.name : 'Drop repository archive here'}</p>
                 <span>or browse local files</span>
-                <input ref={inputRef} type="file" accept=".js" onChange={onFileChange} />
+                <input ref={inputRef} type="file" accept={UPLOAD_ACCEPT} onChange={onFileChange} />
               </div>
 
               <div className="github-import-section">
@@ -473,9 +606,14 @@ export default function DashboardPage() {
               {errorMsg && <div className="error-banner">{errorMsg}</div>}
               <div className="upload-footer">
                 <span className="muted">Encrypted transfer · temporary processing</span>
-                <button className="btn btn-primary" type="button" disabled={!file || status === 'loading'} onClick={submit}>
-                  {status === 'loading' ? 'Analysing...' : 'Start Analysis'}
-                </button>
+                <div className="upload-actions">
+                  <button className="btn btn-ghost" type="button" disabled={!file || reviewStatus === 'loading'} onClick={reviewUpload}>
+                    {reviewStatus === 'loading' ? 'Reviewing...' : 'Code review'}
+                  </button>
+                  <button className="btn btn-primary" type="button" disabled={!file || status === 'loading'} onClick={submit}>
+                    {status === 'loading' ? 'Analysing...' : 'Start Analysis'}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -514,11 +652,18 @@ export default function DashboardPage() {
                   {saveError && <div className="error-banner">{saveError}</div>}
                 </div>
               )}
-              {status === 'idle' && (
+              {status === 'idle' && reviewStatus === 'idle' && (
                 <div className="status-list">
                   <p className="muted">Upload a file to start the analysis.</p>
                 </div>
               )}
+              <MaintainabilityPanel
+                status={reviewStatus}
+                score={score}
+                summary={summary}
+                review={review}
+                error={reviewError}
+              />
             </div>
           </section>
         )}
@@ -533,6 +678,7 @@ export default function DashboardPage() {
                   setSelectedFile(null);
                   setExp('');
                   setStatus('idle');
+                  clearReview();
                 }}
               >
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -568,6 +714,8 @@ export default function DashboardPage() {
                     language={selectedFile!.language}
                     onAnalyze={analyzeSelectedFile}
                     analyzing={status === 'loading'}
+                    onReview={reviewSelectedFile}
+                    reviewing={reviewStatus === 'loading'}
                   />
                 </div>
               </div>
@@ -614,7 +762,7 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {status === 'idle' && (
+                {status === 'idle' && reviewStatus === 'idle' && (
                   <div className="analysis-placeholder">
                     <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="3" />
@@ -623,6 +771,13 @@ export default function DashboardPage() {
                     <p>Click <strong>"Analyze with AI"</strong> to get a detailed explanation of this file.</p>
                   </div>
                 )}
+                <MaintainabilityPanel
+                  status={reviewStatus}
+                  score={score}
+                  summary={summary}
+                  review={review}
+                  error={reviewError}
+                />
               </div>
             </section>
           </>

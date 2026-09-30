@@ -6,15 +6,37 @@ import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
 
 const router = Router();
 
+// Labels match uploadRepo.ts for the source extensions this endpoint accepts.
+const SOURCE_LANGUAGES: Record<string, string> = {
+  '.js': 'javascript',
+  '.ts': 'typescript',
+  '.tsx': 'tsx',
+  '.jsx': 'jsx',
+  '.py': 'python',
+  '.java': 'java',
+  '.go': 'go',
+};
+
+const ALLOWED_EXTENSIONS = Object.keys(SOURCE_LANGUAGES).join(', ');
+
+function languageForFilename(filename: string): string | undefined {
+  return SOURCE_LANGUAGES[path.extname(filename).toLowerCase()];
+}
+
+function unsupportedFileMessage(filename: string): string {
+  const ext = path.extname(filename).toLowerCase() || '(no extension)';
+  return `Unsupported file type "${ext}". Allowed extensions: ${ALLOWED_EXTENSIONS}.`;
+}
+
 // Store file in memory — no disk I/O needed
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 1 * 1024 * 1024 }, // 1 MB max
   fileFilter: (_req, file, cb) => {
-    if (path.extname(file.originalname).toLowerCase() === '.js') {
+    if (languageForFilename(file.originalname)) {
       cb(null, true);
     } else {
-      cb(new Error('Only .js files are allowed'));
+      cb(new Error(unsupportedFileMessage(file.originalname)));
     }
   },
 });
@@ -31,7 +53,7 @@ const client = new OpenAI({
 
 /**
  * POST /api/explain
- * Body: multipart/form-data with field "file" containing a .js file
+ * Body: multipart/form-data with field "file" (.js, .ts, .tsx, .jsx, .py, .java, .go)
  *   OR  JSON body: { code: string, filename: string, language?: string }
  * Returns: { explanation: string }
  */
@@ -60,12 +82,14 @@ router.post('/explain', requireAuth, (req: AuthenticatedRequest, res: Response, 
   } else {
     // File upload path (original)
     if (!req.file) {
-      res.status(400).json({ error: 'No file uploaded. Please upload a .js file.' });
+      res.status(400).json({
+        error: `No file uploaded. Please upload a source file (${ALLOWED_EXTENSIONS}).`,
+      });
       return;
     }
     code = req.file.buffer.toString('utf-8');
     filename = req.file.originalname;
-    language = 'javascript';
+    language = languageForFilename(filename) ?? 'text';
 
     if (!code.trim()) {
       res.status(400).json({ error: 'Uploaded file is empty.' });
@@ -103,7 +127,7 @@ ${code}
 
 // Multer / file-type error handler
 router.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  if (err.message === 'Only .js files are allowed') {
+  if (err.message.startsWith('Unsupported file type ')) {
     res.status(400).json({ error: err.message });
   } else if (err instanceof multer.MulterError) {
     res.status(400).json({ error: `Upload error: ${err.message}` });
