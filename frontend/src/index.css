@@ -1000,6 +1000,13 @@ a {
 	white-space: nowrap;
 }
 
+.code-viewer-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-shrink: 0;
+}
+
 .code-viewer-lang-badge {
 	font-size: 0.68rem;
 	text-transform: uppercase;
@@ -1145,6 +1152,70 @@ a {
 	max-width: 260px;
 	font-size: 0.9rem;
 	line-height: 1.5;
+}
+
+.maintainability-panel {
+	margin-top: 16px;
+	padding-top: 16px;
+	border-top: 1px solid var(--border);
+	display: grid;
+	gap: 10px;
+}
+
+.maintainability-score {
+	font-size: 1.6rem;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.maintainability-score span {
+	font-size: 0.85rem;
+	font-weight: 500;
+	color: var(--muted);
+}
+
+.finding-list {
+	display: grid;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.finding {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+}
+
+.severity {
+	flex-shrink: 0;
+	font-size: 0.68rem;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	padding: 2px 8px;
+	border-radius: 999px;
+}
+
+.severity-low {
+	color: var(--accent);
+	background: rgba(34, 197, 94, 0.12);
+}
+
+.severity-medium {
+	color: #fbbf24;
+	background: rgba(251, 191, 36, 0.12);
+}
+
+.severity-high {
+	color: #f87171;
+	background: rgba(248, 113, 113, 0.12);
+}
+
+.upload-actions {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
 }
 
 /* GitHub file hint */

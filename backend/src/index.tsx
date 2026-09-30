@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import explainRouter from './api/explainCode';
+import maintainabilityRouter from './api/maintainability';
 import authRouter from './api/auth';
 import uploadRepoRouter from './api/uploadRepo';
 import analysesRouter from './api/analyses';
@@ -26,6 +27,7 @@ app.get('/health', (_req: Request, res: Response) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api', explainRouter);
+app.use('/api', maintainabilityRouter);
 app.use('/api', uploadRepoRouter);
 app.use('/api', analysesRouter);
 
