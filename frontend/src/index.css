@@ -1159,6 +1159,7 @@ a {
 	padding-top: 16px;
 	border-top: 1px solid var(--border);
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: 10px;
 }
 
@@ -1166,6 +1167,11 @@ a {
 	font-size: 1.6rem;
 	font-weight: 700;
 	line-height: 1;
+}
+
+.maintainability-panel > h3,
+.maintainability-panel > p {
+	margin: 0;
 }
 
 .maintainability-score span {
@@ -1176,7 +1182,8 @@ a {
 
 .finding-list {
 	display: grid;
-	gap: 8px;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 12px;
 	margin: 0;
 	padding: 0;
 	list-style: none;
@@ -1184,19 +1191,99 @@ a {
 
 .finding {
 	display: flex;
-	gap: 8px;
+	gap: 12px;
 	align-items: flex-start;
+	padding: 16px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: rgba(12, 17, 34, 0.45);
 }
 
 .finding-body {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: 2px;
 	min-width: 0;
+	flex: 1;
+	overflow-wrap: anywhere;
+}
+
+.finding-hint {
+	margin: 0;
+	font-size: 0.82rem;
+	color: var(--muted);
+}
+
+.finding-detail p {
+	margin: 4px 0 8px;
+}
+
+.finding-explanation summary {
+	width: fit-content;
+	padding: 10px 4px;
+	color: var(--accent-2);
+	font-size: 0.85rem;
+	font-weight: 600;
+	cursor: pointer;
+	border-radius: 6px;
+}
+
+.finding-explanation summary:hover {
+	color: var(--text);
+	background: rgba(125, 211, 252, 0.08);
+}
+
+.finding-explanation summary:focus-visible {
+	outline: 2px solid var(--accent-2);
+	outline-offset: 3px;
+}
+
+.finding-explanation[open] summary {
+	margin-bottom: 8px;
+}
+
+.finding-explanation-content {
+	border-top: 1px solid var(--border);
+	padding-top: 4px;
+}
+
+.finding-explanation-content h4 {
+	color: var(--text);
+	font-size: 0.88rem;
+	margin: 14px 0 4px;
+}
+
+.finding-explanation-content p {
+	margin: 0 0 10px;
+}
+
+.finding .markdown pre {
+	max-width: 100%;
+	overflow-x: auto;
+	padding: 12px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: rgba(10, 15, 30, 0.8);
+	font-size: 0.8rem;
+}
+
+.finding .markdown :not(pre) > code {
+	color: var(--accent-2);
+	background: rgba(125, 211, 252, 0.08);
+	padding: 1px 4px;
+	border-radius: 4px;
 }
 
 .finding-title {
 	margin: 0;
 	font-weight: 600;
+}
+
+.finding-heading {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
 }
 
 .finding-category,
@@ -1276,6 +1363,16 @@ a {
 }
 
 @media (max-width: 720px) {
+	.workspace-grid.simple {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.finding {
+		flex-direction: column;
+		gap: 8px;
+	}
+	.finding-body {
+		width: 100%;
+	}
 	.nav-actions {
 		flex-direction: column;
 		align-items: flex-end;

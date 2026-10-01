@@ -14,7 +14,7 @@ const EXT_MAP: Record<string, string> = {
   env: 'bash', gitignore: 'bash', prisma: 'graphql',
 };
 
-export function detectLanguage(filename: string): string {
+function detectLanguage(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   return EXT_MAP[ext] || 'text';
 }
