@@ -46,6 +46,8 @@ type Smell = {
   severity: 'low' | 'medium' | 'high';
   title: string;
   detail: string;
+  why: string;
+  bestPractice: string;
 };
 
 function MaintainabilityPanel({
@@ -65,23 +67,39 @@ function MaintainabilityPanel({
   return (
     <div className="maintainability-panel">
       <h3>Maintainability</h3>
-      {status === 'loading' && <p className="muted">Scoring this file…</p>}
-      {status === 'error' && error && <div className="error-banner">{error}</div>}
+      {status === 'loading' && <p className="muted" role="status">Reviewing this file and preparing explanations…</p>}
+      {status === 'error' && error && <div className="error-banner" role="alert">{error}</div>}
       {status === 'success' && (
         <>
           <p className="maintainability-score">{score}<span> / 100</span></p>
           <p>{summary}</p>
+          {smells.length > 0 && (
+            <p className="finding-hint">{smells.length} {smells.length === 1 ? 'finding' : 'findings'} · Dig deeper for the reason and a practical fix.</p>
+          )}
           {smells.length === 0 ? (
             <p className="muted">No findings.</p>
           ) : (
             <ul className="finding-list">
               {smells.map((smell, index) => (
                 <li key={`${smell.category}-${smell.title}-${index}`} className="finding">
-                  <span className={`severity severity-${smell.severity}`}>{smell.severity}</span>
                   <div className="finding-body">
-                    <p className="finding-title">{smell.title}</p>
+                    <div className="finding-heading">
+                      <span className={`severity severity-${smell.severity}`}>{smell.severity}</span>
+                      <p className="finding-title">{smell.title}</p>
+                    </div>
                     <p className="finding-category">{smell.category}</p>
-                    <p className="finding-detail">{smell.detail}</p>
+                    <div className="finding-detail markdown"><ReactMarkdown>{smell.detail}</ReactMarkdown></div>
+                    <details className="finding-explanation">
+                      <summary aria-label={`Dig deeper: ${smell.title}`}>Dig deeper</summary>
+                      <div className="markdown finding-explanation-content">
+                        <h4>What is wrong?</h4>
+                        <ReactMarkdown>{smell.detail}</ReactMarkdown>
+                        <h4>Why does it matter?</h4>
+                        <ReactMarkdown>{smell.why}</ReactMarkdown>
+                        <h4>What should I do?</h4>
+                        <ReactMarkdown>{smell.bestPractice}</ReactMarkdown>
+                      </div>
+                    </details>
                   </div>
                 </li>
               ))}
@@ -122,6 +140,20 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState('');
   const [smells, setSmells] = useState<Smell[]>([]);
   const [reviewError, setReviewError] = useState('');
+  const reviewRequestId = useRef(0);
+
+  // A response for a previous file (or an unmounted dashboard) must not appear
+  // beside the current file. Opening finding details itself makes no requests.
+  useEffect(() => () => { reviewRequestId.current += 1; }, []);
+
+  const clearReview = useCallback(() => {
+    reviewRequestId.current += 1;
+    setReviewStatus('idle');
+    setScore(null);
+    setSummary('');
+    setSmells([]);
+    setReviewError('');
+  }, []);
 
   useEffect(() => {
     const fetchAnalyses = async () => {
@@ -166,6 +198,7 @@ export default function DashboardPage() {
   };
 
   const pick = (f: File) => {
+    clearReview();
     const allowed = UPLOAD_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext));
     if (!allowed) {
       setError(`Only ${UPLOAD_EXTENSIONS.join(', ')} files are accepted.`);
@@ -179,15 +212,6 @@ export default function DashboardPage() {
     setSaveState('idle');
     setSaveError('');
     setLatestAnalysisId(null);
-    clearReview();
-  };
-
-  const clearReview = () => {
-    setReviewStatus('idle');
-    setScore(null);
-    setSummary('');
-    setSmells([]);
-    setReviewError('');
   };
 
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
@@ -245,6 +269,7 @@ export default function DashboardPage() {
     setImportedFiles([]);
     setImportMeta(null);
     setSelectedFile(null);
+    clearReview();
 
     try {
       const res = await fetch(IMPORT_URL, {
@@ -320,9 +345,17 @@ export default function DashboardPage() {
     }
   };
 
-  const readReview = async (res: Response) => {
+  const readReview = async (res: Response, requestId: number) => {
     const data = await res.json();
+    if (requestId !== reviewRequestId.current) return;
     if (!res.ok) throw new Error(data.error || 'Code review failed');
+    if (!Array.isArray(data.smells) || data.smells.some((smell: Smell | null) =>
+      !smell || [smell.title, smell.detail, smell.why, smell.bestPractice].some(
+        value => typeof value !== 'string' || !value.trim(),
+      ),
+    )) {
+      throw new Error('The review returned incomplete explanations. Please try Code review again.');
+    }
     setScore(typeof data.score === 'number' ? data.score : null);
     setSummary(typeof data.summary === 'string' ? data.summary : '');
     setSmells(Array.isArray(data.smells) ? data.smells : []);
@@ -331,6 +364,7 @@ export default function DashboardPage() {
 
   const reviewSelectedFile = async () => {
     if (!selectedFile || !token) return;
+    const requestId = ++reviewRequestId.current;
     setReviewStatus('loading');
     setReviewError('');
     setScore(null);
@@ -349,8 +383,9 @@ export default function DashboardPage() {
           language: selectedFile.language,
         }),
       });
-      await readReview(res);
+      await readReview(res, requestId);
     } catch (err: unknown) {
+      if (requestId !== reviewRequestId.current) return;
       setReviewError(err instanceof Error ? err.message : 'Code review failed');
       setReviewStatus('error');
     }
@@ -363,6 +398,7 @@ export default function DashboardPage() {
       setReviewStatus('error');
       return;
     }
+    const requestId = ++reviewRequestId.current;
     setReviewStatus('loading');
     setReviewError('');
     setScore(null);
@@ -376,8 +412,9 @@ export default function DashboardPage() {
         body: form,
         headers: { Authorization: `Bearer ${token}` },
       });
-      await readReview(res);
+      await readReview(res, requestId);
     } catch (err: unknown) {
+      if (requestId !== reviewRequestId.current) return;
       setReviewError(err instanceof Error ? err.message : 'Code review failed');
       setReviewStatus('error');
     }
@@ -391,12 +428,8 @@ export default function DashboardPage() {
     setSaveState('idle');
     setSaveError('');
     setLatestAnalysisId(null);
-    setReviewStatus('idle');
-    setScore(null);
-    setSummary('');
-    setSmells([]);
-    setReviewError('');
-  }, []);
+    clearReview();
+  }, [clearReview]);
 
   const saveAnalysis = async () => {
     if (!explanation) return;
