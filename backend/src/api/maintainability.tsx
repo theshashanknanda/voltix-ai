@@ -31,9 +31,13 @@ const SAFE_AI_ERROR = 'AI error: Maintainability analysis failed.';
 
 type Severity = 'low' | 'medium' | 'high';
 
-type Finding = {
+type SmellCategory = 'long method' | 'deep nesting' | 'duplication' | 'magic values' | 'poor naming';
+
+type Smell = {
+  category: SmellCategory;
   severity: Severity;
-  message: string;
+  title: string;
+  detail: string;
 };
 
 /**
@@ -44,13 +48,19 @@ type Finding = {
  *   OR multipart field "file" (.js, max 1 MB)
  * Auth: Bearer JWT. Missing or invalid token → 401.
  *
- * Success 200 (US-S3 can persist these fields as-is):
+ * Success 200:
  *   score: integer 0–100. The model chooses the number from readability,
  *     structure, duplication, complexity, naming, and code smells.
  *     This API only rounds and clamps it.
- *   summary: non-empty string
- *   review: { severity: "low" | "medium" | "high", message: string }[]
- *     Empty array is valid. Unknown severities and blank messages are dropped.
+ *   summary: non-empty string. A clean file still gets a short summary.
+ *   smells: {
+ *     category: "long method" | "deep nesting" | "duplication" | "magic values" | "poor naming",
+ *     severity: "low" | "medium" | "high",
+ *     title: string,
+ *     detail: string
+ *   }[]
+ *     Empty array is valid. Unknown categories, unknown severities, and blank
+ *     title or detail are dropped.
  *
  * 400 when code is missing or blank.
  * 500 with { error: "AI error: Maintainability analysis failed." } when the
@@ -70,6 +80,29 @@ const SEVERITY_ALIASES: Record<string, Severity> = {
   severe: 'high',
 };
 
+const CATEGORY_ALIASES: Record<string, SmellCategory> = {
+  'long method': 'long method',
+  'god function': 'long method',
+  'god method': 'long method',
+  'deep nesting': 'deep nesting',
+  nesting: 'deep nesting',
+  'nested conditionals': 'deep nesting',
+  duplication: 'duplication',
+  duplicate: 'duplication',
+  'duplicated code': 'duplication',
+  'magic values': 'magic values',
+  'magic value': 'magic values',
+  'magic number': 'magic values',
+  'magic numbers': 'magic values',
+  'poor naming': 'poor naming',
+  naming: 'poor naming',
+  'bad naming': 'poor naming',
+};
+
+function categoryKey(value: string): string {
+  return value.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function clampScore(value: unknown): number | null {
   if (typeof value === 'string' && value.trim() === '') return null;
   const n = typeof value === 'number' ? value : Number(value);
@@ -77,22 +110,24 @@ function clampScore(value: unknown): number | null {
   return Math.min(100, Math.max(0, Math.round(n)));
 }
 
-function normalizeReview(value: unknown): Finding[] | null {
+function normalizeSmells(value: unknown): Smell[] | null {
   if (value == null) return [];
   if (!Array.isArray(value)) return null;
-  const findings: Finding[] = [];
+  const smells: Smell[] = [];
   for (const item of value) {
     if (!item || typeof item !== 'object') continue;
-    const raw = item as { severity?: unknown; message?: unknown };
+    const raw = item as { category?: unknown; severity?: unknown; title?: unknown; detail?: unknown };
+    const category = CATEGORY_ALIASES[categoryKey(String(raw.category ?? ''))];
     const severity = SEVERITY_ALIASES[String(raw.severity ?? '').toLowerCase()];
-    const message = typeof raw.message === 'string' ? raw.message.trim() : '';
-    if (!severity || !message) continue;
-    findings.push({ severity, message });
+    const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+    const detail = typeof raw.detail === 'string' ? raw.detail.trim() : '';
+    if (!category || !severity || !title || !detail) continue;
+    smells.push({ category, severity, title, detail });
   }
-  return findings;
+  return smells;
 }
 
-function parseModelOutput(raw: string): { score: number; summary: string; review: Finding[] } | null {
+function parseModelOutput(raw: string): { score: number; summary: string; smells: Smell[] } | null {
   let parsed: unknown;
   try {
     const trimmed = raw.trim();
@@ -102,12 +137,12 @@ function parseModelOutput(raw: string): { score: number; summary: string; review
     return null;
   }
   if (!parsed || typeof parsed !== 'object') return null;
-  const body = parsed as { score?: unknown; summary?: unknown; review?: unknown };
+  const body = parsed as { score?: unknown; summary?: unknown; smells?: unknown };
   const score = clampScore(body.score);
   const summary = typeof body.summary === 'string' ? body.summary.trim() : '';
-  const review = normalizeReview(body.review);
-  if (score === null || !summary || review === null) return null;
-  return { score, summary, review };
+  const smells = normalizeSmells(body.smells);
+  if (score === null || !summary || smells === null) return null;
+  return { score, summary, smells };
 }
 
 function failAi(res: Response, err?: unknown): void {
@@ -149,9 +184,9 @@ router.post('/maintainability', requireAuth, (req: AuthenticatedRequest, res: Re
     }
   }
 
-  const prompt = `You are a senior engineer scoring maintainability. Judge the code yourself and choose an integer score. Weigh readability, structure, duplication, complexity, naming, and obvious code smells. Return only one JSON object, no markdown, with this shape:
-{"score": <integer 0-100>, "summary": "<one or two sentences>", "review": [{"severity": "low"|"medium"|"high", "message": "<finding>"}]}
-Use an empty review array when the file is clean. Every finding needs a non-empty message.
+  const prompt = `You are a senior engineer scoring maintainability and naming code smells. Judge the code yourself and choose an integer score. Weigh readability, structure, duplication, complexity, naming, and obvious code smells. Return only one JSON object, no markdown, with this shape:
+{"score": <integer 0-100>, "summary": "<one or two sentences>", "smells": [{"category": "long method"|"deep nesting"|"duplication"|"magic values"|"poor naming", "severity": "low"|"medium"|"high", "title": "<short label>", "detail": "<one or two sentences>"}]}
+Use only those five categories. Use an empty smells array when the file is clean, and still write a short summary. Every smell needs a non-empty title and detail.
 
 File: ${filename}
 Code:

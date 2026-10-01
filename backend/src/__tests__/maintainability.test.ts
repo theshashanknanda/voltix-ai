@@ -32,16 +32,18 @@ describe('POST /api/maintainability', () => {
     jest.clearAllMocks();
   });
 
-  it('returns a clamped score, summary, and normalized findings', async () => {
+  it('returns a clamped score, summary, and normalized smells', async () => {
     const payload = {
       score: 142,
       summary: 'Readable, but one function does too much.',
-      review: [
-        { severity: 'warning', message: 'Nested conditionals.' },
-        { severity: 'critical', message: 'God function.' },
-        { severity: 'info', message: 'Magic number.' },
-        { severity: 'banana', message: 'Ignored severity.' },
-        { severity: 'high', message: '   ' },
+      smells: [
+        { category: 'nested conditionals', severity: 'warning', title: 'Nested conditionals', detail: 'Three levels of ifs.' },
+        { category: 'god function', severity: 'critical', title: 'God function', detail: 'run does everything.' },
+        { category: 'magic number', severity: 'info', title: 'Magic number', detail: '42 is unexplained.' },
+        { category: 'spaghetti', severity: 'high', title: 'Unknown category', detail: 'Dropped.' },
+        { category: 'poor naming', severity: 'banana', title: 'Bad name', detail: 'Dropped severity.' },
+        { category: 'duplication', severity: 'high', title: '   ', detail: 'Blank title.' },
+        { category: 'duplication', severity: 'low', title: 'Copied block', detail: '   ' },
       ],
     };
     mockCreate.mockResolvedValue({
@@ -56,12 +58,35 @@ describe('POST /api/maintainability', () => {
     expect(response.status).toBe(200);
     expect(response.body.score).toBe(100);
     expect(response.body.summary).toBe(payload.summary);
-    expect(response.body.review).toEqual([
-      { severity: 'medium', message: 'Nested conditionals.' },
-      { severity: 'high', message: 'God function.' },
-      { severity: 'low', message: 'Magic number.' },
+    expect(response.body.smells).toEqual([
+      { category: 'deep nesting', severity: 'medium', title: 'Nested conditionals', detail: 'Three levels of ifs.' },
+      { category: 'long method', severity: 'high', title: 'God function', detail: 'run does everything.' },
+      { category: 'magic values', severity: 'low', title: 'Magic number', detail: '42 is unexplained.' },
     ]);
     expect(mockCreate).toHaveBeenCalled();
+  });
+
+  it('returns 200 with an empty smells list when the file is clean', async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            score: 92,
+            summary: 'Short and easy to follow.',
+            smells: [],
+          }),
+        },
+      }],
+    });
+
+    const response = await request(app)
+      .post('/api/maintainability')
+      .set(authHeader())
+      .send({ code: 'function add(a, b) { return a + b; }', filename: 'add.js' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.summary).toBe('Short and easy to follow.');
+    expect(response.body.smells).toEqual([]);
   });
 
   it('returns 400 when code is missing or blank', async () => {

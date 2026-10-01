@@ -1188,6 +1188,28 @@ a {
 	align-items: flex-start;
 }
 
+.finding-body {
+	display: grid;
+	gap: 2px;
+	min-width: 0;
+}
+
+.finding-title {
+	margin: 0;
+	font-weight: 600;
+}
+
+.finding-category,
+.finding-detail {
+	margin: 0;
+	color: var(--muted);
+}
+
+.finding-category {
+	font-size: 0.75rem;
+	text-transform: capitalize;
+}
+
 .severity {
 	flex-shrink: 0;
 	font-size: 0.68rem;

@@ -1,0 +1,1133 @@
+diff --git a/backend/src/__tests__/explainCode.test.ts b/backend/src/__tests__/explainCode.test.ts
+index effa963..ebece1c 100644
+--- a/backend/src/__tests__/explainCode.test.ts
++++ b/backend/src/__tests__/explainCode.test.ts
+@@ -38,6 +38,11 @@ describe('POST /api/explain', () => {
+     jest.clearAllMocks();
+   });
+ 
++  function promptText(): string {
++    const arg = mockCreate.mock.calls[0][0] as { messages: { content: string }[] };
++    return arg.messages[0].content;
++  }
++
+   // TEST 3.1
+   it('should explain a valid .js file successfully', async () => {
+     const mockExplanation = 'This is a senior JavaScript explanation.';
+@@ -50,18 +55,73 @@ describe('POST /api/explain', () => {
+       .attach('file', Buffer.from('const x = 10;'), 'test.js');
+ 
+     expect(response.status).toBe(200);
+-    expect(response.body).toHaveProperty('explanation', mockExplanation);
+-    expect(mockCreate).toHaveBeenCalled();
++    expect(response.body.explanation).toBe(mockExplanation);
++    expect(response.body.explanation.length).toBeGreaterThan(0);
++    expect(promptText()).toContain('following javascript code');
++    expect(promptText()).toContain('```javascript');
++  });
++
++  it.each([
++    ['widget.ts', 'typescript', 'const n: number = 1;'],
++    ['Widget.tsx', 'tsx', 'export const A = () => null;'],
++    ['Widget.jsx', 'jsx', 'export const A = () => null;'],
++    ['script.py', 'python', 'n = 1\n'],
++    ['Main.java', 'java', 'class Main {}'],
++    ['main.go', 'go', 'package main\n'],
++  ])('explains a %s upload and labels the prompt as %s', async (filename, language, source) => {
++    const mockExplanation = `Explained ${language}.`;
++    mockCreate.mockResolvedValue({
++      choices: [{ message: { content: mockExplanation } }],
++    });
++
++    const response = await request(app)
++      .post('/api/explain')
++      .attach('file', Buffer.from(source), filename);
++
++    expect(response.status).toBe(200);
++    expect(response.body.explanation).toBe(mockExplanation);
++    expect(response.body.explanation.length).toBeGreaterThan(0);
++    expect(promptText()).toContain(`following ${language} code`);
++    expect(promptText()).toContain('```' + language);
++    expect(mockCreate).toHaveBeenCalledTimes(1);
+   });
+ 
+   // TEST 3.2
+-  it('should reject non-.js files with 400 error', async () => {
++  it('should reject an unsupported extension with 400', async () => {
+     const response = await request(app)
+       .post('/api/explain')
+-      .attach('file', Buffer.from('hello world'), 'test.txt');
++      .attach('file', Buffer.from('MZ'), 'tool.exe');
+ 
+     expect(response.status).toBe(400);
+-    expect(response.body.error).toContain('Only .js files are allowed');
++    expect(response.body.error).toContain('Unsupported file type ".exe"');
++    expect(response.body.error).toContain('.ts');
++    expect(mockCreate).not.toHaveBeenCalled();
++  });
++
++  it('should reject an empty allowed file with 400', async () => {
++    const response = await request(app)
++      .post('/api/explain')
++      .attach('file', Buffer.from(''), 'empty.ts');
++
++    expect(response.status).toBe(400);
++    expect(response.body.error).toBe('Uploaded file is empty.');
++    expect(mockCreate).not.toHaveBeenCalled();
++  });
++
++  it('explains a JSON body with the language the client sends', async () => {
++    const mockExplanation = 'JSON path still works.';
++    mockCreate.mockResolvedValue({
++      choices: [{ message: { content: mockExplanation } }],
++    });
++
++    const response = await request(app)
++      .post('/api/explain')
++      .send({ code: 'print(1)', filename: 'notes.txt', language: 'python' });
++
++    expect(response.status).toBe(200);
++    expect(response.body.explanation).toBe(mockExplanation);
++    expect(promptText()).toContain('following python code');
++    expect(promptText()).toContain('notes.txt');
+   });
+ 
+   // TEST 3.3
+diff --git a/backend/src/__tests__/maintainability.test.ts b/backend/src/__tests__/maintainability.test.ts
+new file mode 100644
+index 0000000..66618ed
+--- /dev/null
++++ b/backend/src/__tests__/maintainability.test.ts
+@@ -0,0 +1,149 @@
++import request from 'supertest';
++import express from 'express';
++import jwt from 'jsonwebtoken';
++
++const mockCreate = jest.fn();
++
++jest.mock('openai', () => {
++  return jest.fn().mockImplementation(() => ({
++    chat: {
++      completions: {
++        create: mockCreate,
++      },
++    },
++  }));
++});
++
++import maintainabilityRouter from '../api/maintainability';
++
++const app = express();
++app.use(express.json());
++app.use('/api', maintainabilityRouter);
++
++const authHeader = () => {
++  const secret = process.env.JWT_SECRET;
++  if (!secret) throw new Error('JWT_SECRET is not set');
++  const token = jwt.sign({ sub: 'test-user', email: 'test@example.com' }, secret);
++  return { Authorization: `Bearer ${token}` };
++};
++
++describe('POST /api/maintainability', () => {
++  beforeEach(() => {
++    jest.clearAllMocks();
++  });
++
++  it('returns a clamped score, summary, and normalized smells', async () => {
++    const payload = {
++      score: 142,
++      summary: 'Readable, but one function does too much.',
++      smells: [
++        { category: 'nested conditionals', severity: 'warning', title: 'Nested conditionals', detail: 'Three levels of ifs.' },
++        { category: 'god function', severity: 'critical', title: 'God function', detail: 'run does everything.' },
++        { category: 'magic number', severity: 'info', title: 'Magic number', detail: '42 is unexplained.' },
++        { category: 'spaghetti', severity: 'high', title: 'Unknown category', detail: 'Dropped.' },
++        { category: 'poor naming', severity: 'banana', title: 'Bad name', detail: 'Dropped severity.' },
++        { category: 'duplication', severity: 'high', title: '   ', detail: 'Blank title.' },
++        { category: 'duplication', severity: 'low', title: 'Copied block', detail: '   ' },
++      ],
++    };
++    mockCreate.mockResolvedValue({
++      choices: [{ message: { content: '```json\n' + JSON.stringify(payload) + '\n```' } }],
++    });
++
++    const response = await request(app)
++      .post('/api/maintainability')
++      .set(authHeader())
++      .send({ code: 'function run(){ return 1 }', filename: 'run.js', language: 'javascript' });
++
++    expect(response.status).toBe(200);
++    expect(response.body.score).toBe(100);
++    expect(response.body.summary).toBe(payload.summary);
++    expect(response.body.smells).toEqual([
++      { category: 'deep nesting', severity: 'medium', title: 'Nested conditionals', detail: 'Three levels of ifs.' },
++      { category: 'long method', severity: 'high', title: 'God function', detail: 'run does everything.' },
++      { category: 'magic values', severity: 'low', title: 'Magic number', detail: '42 is unexplained.' },
++    ]);
++    expect(mockCreate).toHaveBeenCalled();
++  });
++
++  it('returns 200 with an empty smells list when the file is clean', async () => {
++    mockCreate.mockResolvedValue({
++      choices: [{
++        message: {
++          content: JSON.stringify({
++            score: 92,
++            summary: 'Short and easy to follow.',
++            smells: [],
++          }),
++        },
++      }],
++    });
++
++    const response = await request(app)
++      .post('/api/maintainability')
++      .set(authHeader())
++      .send({ code: 'function add(a, b) { return a + b; }', filename: 'add.js' });
++
++    expect(response.status).toBe(200);
++    expect(response.body.summary).toBe('Short and easy to follow.');
++    expect(response.body.smells).toEqual([]);
++  });
++
++  it('returns 400 when code is missing or blank', async () => {
++    const missing = await request(app)
++      .post('/api/maintainability')
++      .set(authHeader())
++      .send({ filename: 'empty.js' });
++
++    expect(missing.status).toBe(400);
++    expect(missing.body.error).toBe('Code content is empty.');
++
++    const blank = await request(app)
++      .post('/api/maintainability')
++      .set(authHeader())
++      .send({ code: '   ', filename: 'blank.js' });
++
++    expect(blank.status).toBe(400);
++    expect(blank.body.error).toBe('Code content is empty.');
++    expect(mockCreate).not.toHaveBeenCalled();
++  });
++
++  it('returns 401 when no JWT is sent', async () => {
++    const response = await request(app)
++      .post('/api/maintainability')
++      .send({ code: 'const x = 1;', filename: 'a.js' });
++
++    expect(response.status).toBe(401);
++    expect(response.body.error).toBe('Unauthorized. Please login again.');
++    expect(mockCreate).not.toHaveBeenCalled();
++  });
++
++  it('returns a safe 500 when the provider throws', async () => {
++    const providerDump = 'SECRET_PROVIDER_DUMP_groq-timeout-xyz';
++    mockCreate.mockRejectedValue(new Error(providerDump));
++
++    const response = await request(app)
++      .post('/api/maintainability')
++      .set(authHeader())
++      .send({ code: 'const y = 2;', filename: 'b.js' });
++
++    expect(response.status).toBe(500);
++    expect(response.body.error).toBe('AI error: Maintainability analysis failed.');
++    expect(JSON.stringify(response.body)).not.toContain(providerDump);
++  });
++
++  it('returns a safe 500 when the model output is unusable', async () => {
++    mockCreate.mockResolvedValue({
++      choices: [{ message: { content: 'not json at all' } }],
++    });
++
++    const response = await request(app)
++      .post('/api/maintainability')
++      .set(authHeader())
++      .send({ code: 'const z = 3;', filename: 'c.js' });
++
++    expect(response.status).toBe(500);
++    expect(response.body.error).toBe('AI error: Maintainability analysis failed.');
++    expect(JSON.stringify(response.body)).not.toContain('not json');
++  });
++});
+diff --git a/backend/src/api/explainCode.tsx b/backend/src/api/explainCode.tsx
+index d3e880b..6d5f02c 100644
+--- a/backend/src/api/explainCode.tsx
++++ b/backend/src/api/explainCode.tsx
+@@ -6,15 +6,37 @@ import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
+ 
+ const router = Router();
+ 
++// Labels match uploadRepo.ts for the source extensions this endpoint accepts.
++const SOURCE_LANGUAGES: Record<string, string> = {
++  '.js': 'javascript',
++  '.ts': 'typescript',
++  '.tsx': 'tsx',
++  '.jsx': 'jsx',
++  '.py': 'python',
++  '.java': 'java',
++  '.go': 'go',
++};
++
++const ALLOWED_EXTENSIONS = Object.keys(SOURCE_LANGUAGES).join(', ');
++
++function languageForFilename(filename: string): string | undefined {
++  return SOURCE_LANGUAGES[path.extname(filename).toLowerCase()];
++}
++
++function unsupportedFileMessage(filename: string): string {
++  const ext = path.extname(filename).toLowerCase() || '(no extension)';
++  return `Unsupported file type "${ext}". Allowed extensions: ${ALLOWED_EXTENSIONS}.`;
++}
++
+ // Store file in memory — no disk I/O needed
+ const upload = multer({
+   storage: multer.memoryStorage(),
+   limits: { fileSize: 1 * 1024 * 1024 }, // 1 MB max
+   fileFilter: (_req, file, cb) => {
+-    if (path.extname(file.originalname).toLowerCase() === '.js') {
++    if (languageForFilename(file.originalname)) {
+       cb(null, true);
+     } else {
+-      cb(new Error('Only .js files are allowed'));
++      cb(new Error(unsupportedFileMessage(file.originalname)));
+     }
+   },
+ });
+@@ -31,7 +53,7 @@ const client = new OpenAI({
+ 
+ /**
+  * POST /api/explain
+- * Body: multipart/form-data with field "file" containing a .js file
++ * Body: multipart/form-data with field "file" (.js, .ts, .tsx, .jsx, .py, .java, .go)
+  *   OR  JSON body: { code: string, filename: string, language?: string }
+  * Returns: { explanation: string }
+  */
+@@ -60,12 +82,14 @@ router.post('/explain', requireAuth, (req: AuthenticatedRequest, res: Response,
+   } else {
+     // File upload path (original)
+     if (!req.file) {
+-      res.status(400).json({ error: 'No file uploaded. Please upload a .js file.' });
++      res.status(400).json({
++        error: `No file uploaded. Please upload a source file (${ALLOWED_EXTENSIONS}).`,
++      });
+       return;
+     }
+     code = req.file.buffer.toString('utf-8');
+     filename = req.file.originalname;
+-    language = 'javascript';
++    language = languageForFilename(filename) ?? 'text';
+ 
+     if (!code.trim()) {
+       res.status(400).json({ error: 'Uploaded file is empty.' });
+@@ -103,7 +127,7 @@ ${code}
+ 
+ // Multer / file-type error handler
+ router.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+-  if (err.message === 'Only .js files are allowed') {
++  if (err.message.startsWith('Unsupported file type ')) {
+     res.status(400).json({ error: err.message });
+   } else if (err instanceof multer.MulterError) {
+     res.status(400).json({ error: `Upload error: ${err.message}` });
+diff --git a/backend/src/api/maintainability.tsx b/backend/src/api/maintainability.tsx
+new file mode 100644
+index 0000000..2640f07
+--- /dev/null
++++ b/backend/src/api/maintainability.tsx
+@@ -0,0 +1,232 @@
++import { Router, Request, Response, NextFunction } from 'express';
++import multer from 'multer';
++import OpenAI from 'openai';
++import path from 'path';
++import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
++
++const router = Router();
++
++const upload = multer({
++  storage: multer.memoryStorage(),
++  limits: { fileSize: 1 * 1024 * 1024 },
++  fileFilter: (_req, file, cb) => {
++    if (path.extname(file.originalname).toLowerCase() === '.js') {
++      cb(null, true);
++    } else {
++      cb(new Error('Only .js files are allowed'));
++    }
++  },
++});
++
++if (!process.env.GROQ_API_KEY) {
++  throw new Error('GROQ_API_KEY is not set');
++}
++
++const client = new OpenAI({
++  apiKey: process.env.GROQ_API_KEY,
++  baseURL: 'https://api.groq.com/openai/v1',
++});
++
++const SAFE_AI_ERROR = 'AI error: Maintainability analysis failed.';
++
++type Severity = 'low' | 'medium' | 'high';
++
++type SmellCategory = 'long method' | 'deep nesting' | 'duplication' | 'magic values' | 'poor naming';
++
++type Smell = {
++  category: SmellCategory;
++  severity: Severity;
++  title: string;
++  detail: string;
++};
++
++/**
++ * POST /api/maintainability
++ *
++ * Request (same shapes as /api/explain):
++ *   JSON { code: string, filename: string, language?: string }
++ *   OR multipart field "file" (.js, max 1 MB)
++ * Auth: Bearer JWT. Missing or invalid token → 401.
++ *
++ * Success 200:
++ *   score: integer 0–100. The model chooses the number from readability,
++ *     structure, duplication, complexity, naming, and code smells.
++ *     This API only rounds and clamps it.
++ *   summary: non-empty string. A clean file still gets a short summary.
++ *   smells: {
++ *     category: "long method" | "deep nesting" | "duplication" | "magic values" | "poor naming",
++ *     severity: "low" | "medium" | "high",
++ *     title: string,
++ *     detail: string
++ *   }[]
++ *     Empty array is valid. Unknown categories, unknown severities, and blank
++ *     title or detail are dropped.
++ *
++ * 400 when code is missing or blank.
++ * 500 with { error: "AI error: Maintainability analysis failed." } when the
++ * provider throws or the output cannot be parsed. The raw provider payload
++ * is not returned to the client.
++ */
++const SEVERITY_ALIASES: Record<string, Severity> = {
++  low: 'low',
++  info: 'low',
++  minor: 'low',
++  medium: 'medium',
++  warning: 'medium',
++  moderate: 'medium',
++  high: 'high',
++  critical: 'high',
++  error: 'high',
++  severe: 'high',
++};
++
++const CATEGORY_ALIASES: Record<string, SmellCategory> = {
++  'long method': 'long method',
++  'god function': 'long method',
++  'god method': 'long method',
++  'deep nesting': 'deep nesting',
++  nesting: 'deep nesting',
++  'nested conditionals': 'deep nesting',
++  duplication: 'duplication',
++  duplicate: 'duplication',
++  'duplicated code': 'duplication',
++  'magic values': 'magic values',
++  'magic value': 'magic values',
++  'magic number': 'magic values',
++  'magic numbers': 'magic values',
++  'poor naming': 'poor naming',
++  naming: 'poor naming',
++  'bad naming': 'poor naming',
++};
++
++function categoryKey(value: string): string {
++  return value.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
++}
++
++function clampScore(value: unknown): number | null {
++  if (typeof value === 'string' && value.trim() === '') return null;
++  const n = typeof value === 'number' ? value : Number(value);
++  if (!Number.isFinite(n)) return null;
++  return Math.min(100, Math.max(0, Math.round(n)));
++}
++
++function normalizeSmells(value: unknown): Smell[] | null {
++  if (value == null) return [];
++  if (!Array.isArray(value)) return null;
++  const smells: Smell[] = [];
++  for (const item of value) {
++    if (!item || typeof item !== 'object') continue;
++    const raw = item as { category?: unknown; severity?: unknown; title?: unknown; detail?: unknown };
++    const category = CATEGORY_ALIASES[categoryKey(String(raw.category ?? ''))];
++    const severity = SEVERITY_ALIASES[String(raw.severity ?? '').toLowerCase()];
++    const title = typeof raw.title === 'string' ? raw.title.trim() : '';
++    const detail = typeof raw.detail === 'string' ? raw.detail.trim() : '';
++    if (!category || !severity || !title || !detail) continue;
++    smells.push({ category, severity, title, detail });
++  }
++  return smells;
++}
++
++function parseModelOutput(raw: string): { score: number; summary: string; smells: Smell[] } | null {
++  let parsed: unknown;
++  try {
++    const trimmed = raw.trim();
++    const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
++    parsed = JSON.parse(fenced ? fenced[1] : trimmed);
++  } catch {
++    return null;
++  }
++  if (!parsed || typeof parsed !== 'object') return null;
++  const body = parsed as { score?: unknown; summary?: unknown; smells?: unknown };
++  const score = clampScore(body.score);
++  const summary = typeof body.summary === 'string' ? body.summary.trim() : '';
++  const smells = normalizeSmells(body.smells);
++  if (score === null || !summary || smells === null) return null;
++  return { score, summary, smells };
++}
++
++function failAi(res: Response, err?: unknown): void {
++  console.error('[Maintainability Error]', err);
++  res.status(500).json({ error: SAFE_AI_ERROR });
++}
++
++router.post('/maintainability', requireAuth, (req: AuthenticatedRequest, res: Response, next) => {
++  if (req.is('application/json')) {
++    return next();
++  }
++  upload.single('file')(req, res, next);
++}, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
++  let code: string;
++  let filename: string;
++  let language: string;
++
++  if (req.is('application/json') || req.body?.code) {
++    code = req.body.code;
++    filename = req.body.filename || 'unknown';
++    language = req.body.language || 'text';
++
++    if (!code || !code.trim()) {
++      res.status(400).json({ error: 'Code content is empty.' });
++      return;
++    }
++  } else {
++    if (!req.file) {
++      res.status(400).json({ error: 'No file uploaded. Please upload a .js file.' });
++      return;
++    }
++    code = req.file.buffer.toString('utf-8');
++    filename = req.file.originalname;
++    language = 'javascript';
++
++    if (!code.trim()) {
++      res.status(400).json({ error: 'Uploaded file is empty.' });
++      return;
++    }
++  }
++
++  const prompt = `You are a senior engineer scoring maintainability and naming code smells. Judge the code yourself and choose an integer score. Weigh readability, structure, duplication, complexity, naming, and obvious code smells. Return only one JSON object, no markdown, with this shape:
++{"score": <integer 0-100>, "summary": "<one or two sentences>", "smells": [{"category": "long method"|"deep nesting"|"duplication"|"magic values"|"poor naming", "severity": "low"|"medium"|"high", "title": "<short label>", "detail": "<one or two sentences>"}]}
++Use only those five categories. Use an empty smells array when the file is clean, and still write a short summary. Every smell needs a non-empty title and detail.
++
++File: ${filename}
++Code:
++\`\`\`${language}
++${code}
++\`\`\``;
++
++  try {
++    const response = await client.chat.completions.create({
++      model: 'openai/gpt-oss-120b',
++      messages: [{ role: 'user', content: prompt }],
++    });
++
++    const raw = response.choices[0]?.message?.content;
++    if (!raw) {
++      failAi(res, new Error('Empty model output'));
++      return;
++    }
++
++    const parsed = parseModelOutput(raw);
++    if (!parsed) {
++      failAi(res, new Error('Unusable model output'));
++      return;
++    }
++
++    res.json(parsed);
++  } catch (err: unknown) {
++    failAi(res, err);
++  }
++});
++
++router.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
++  if (err.message === 'Only .js files are allowed') {
++    res.status(400).json({ error: err.message });
++  } else if (err instanceof multer.MulterError) {
++    res.status(400).json({ error: `Upload error: ${err.message}` });
++  } else {
++    console.error('[Unhandled Error]', err);
++    res.status(500).json({ error: 'Internal server error. Please try again.' });
++  }
++});
++
++export default router;
+diff --git a/backend/src/index.tsx b/backend/src/index.tsx
+index 224121c..5b837d3 100644
+--- a/backend/src/index.tsx
++++ b/backend/src/index.tsx
+@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
+ import cors from 'cors';
+ import helmet from 'helmet';
+ import explainRouter from './api/explainCode';
++import maintainabilityRouter from './api/maintainability';
+ import authRouter from './api/auth';
+ import uploadRepoRouter from './api/uploadRepo';
+ import analysesRouter from './api/analyses';
+@@ -26,6 +27,7 @@ app.get('/health', (_req: Request, res: Response) => {
+ 
+ app.use('/api/auth', authRouter);
+ app.use('/api', explainRouter);
++app.use('/api', maintainabilityRouter);
+ app.use('/api', uploadRepoRouter);
+ app.use('/api', analysesRouter);
+ 
+diff --git a/frontend/src/UploadPage.tsx b/frontend/src/UploadPage.tsx
+index 70d92ff..f6228d8 100644
+--- a/frontend/src/UploadPage.tsx
++++ b/frontend/src/UploadPage.tsx
+@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
+ import { API_BASE_URL } from './config';
+ 
+ const API_URL = `${API_BASE_URL}/api/explain`;
++const UPLOAD_EXTENSIONS = ['.js', '.ts', '.tsx', '.jsx', '.py', '.java', '.go'];
+ 
+ // Color palette — base: #101a30
+ const C = {
+@@ -34,7 +35,8 @@ export default function UploadPage() {
+   const inputRef                   = useRef<HTMLInputElement>(null);
+ 
+   const pick = (f: File) => {
+-    if (!f.name.endsWith('.js')) { setError('Only .js files are accepted.'); setFile(null); return; }
++    const allowed = UPLOAD_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext));
++    if (!allowed) { setError(`Only ${UPLOAD_EXTENSIONS.join(', ')} files are accepted.`); setFile(null); return; }
+     setError(''); setFile(f); setStatus('idle'); setExp('');
+   };
+ 
+@@ -114,10 +116,10 @@ export default function UploadPage() {
+       <div style={{ margin:'20px 32px 0', background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, padding:'28px 32px' }}>
+         <h1 style={{ margin:'0 0 8px', fontSize:'1.45rem', fontWeight:700 }}>Upload your file and get an AI explanation</h1>
+         <p style={{ margin:'0 0 18px', color:C.muted, fontSize:'0.9rem', fontFamily:'monospace' }}>
+-          Drop a single <code style={{ background:C.border, borderRadius:4, padding:'1px 5px', color:'#79c0ff' }}>.js</code> file — Voltix AI will explain what it does.
++          Drop a source file ({UPLOAD_EXTENSIONS.join(', ')}) — Voltix AI will explain what it does.
+         </p>
+         <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+-          {['Max size: 1 MB', 'Format: .js only', 'Powered by Groq · Llama 3.3'].map(t => (
++          {['Max size: 1 MB', `Format: ${UPLOAD_EXTENSIONS.join(', ')}`, 'Powered by Groq · Llama 3.3'].map(t => (
+             <span key={t} style={{ background:C.border, border:`1px solid ${C.dim}`, borderRadius:6, padding:'4px 12px', fontSize:'0.78rem', color:C.muted, fontFamily:'monospace' }}>{t}</span>
+           ))}
+         </div>
+@@ -172,7 +174,7 @@ export default function UploadPage() {
+               {file ? file.name : 'Drop repository archive here'}
+             </p>
+             <p style={{ margin:0, color:C.dim, fontSize:'0.78rem' }}>or browse local files</p>
+-            <input ref={inputRef} type="file" accept=".js" style={{ display:'none' }} onChange={onFileChange} />
++            <input ref={inputRef} type="file" accept={UPLOAD_EXTENSIONS.join(',')} style={{ display:'none' }} onChange={onFileChange} />
+           </div>
+ 
+           {errorMsg && (
+diff --git a/frontend/src/components/CodeViewer.tsx b/frontend/src/components/CodeViewer.tsx
+index 963630f..e5bb742 100644
+--- a/frontend/src/components/CodeViewer.tsx
++++ b/frontend/src/components/CodeViewer.tsx
+@@ -26,9 +26,11 @@ interface Props {
+   language?: string;
+   onAnalyze?: () => void;
+   analyzing?: boolean;
++  onReview?: () => void;
++  reviewing?: boolean;
+ }
+ 
+-const CodeViewer = memo(function CodeViewer({ filename, content, language, onAnalyze, analyzing }: Props) {
++const CodeViewer = memo(function CodeViewer({ filename, content, language, onAnalyze, analyzing, onReview, reviewing }: Props) {
+   const lang = useMemo(() => language || detectLanguage(filename), [filename, language]);
+   const deferredContent = useDeferredValue(content);
+   const isStale = deferredContent !== content;
+@@ -49,29 +51,51 @@ const CodeViewer = memo(function CodeViewer({ filename, content, language, onAna
+           <span className="code-viewer-lang-badge">{lang}</span>
+         </div>
+ 
+-        {onAnalyze && (
+-          <button
+-            id="analyze-ai-btn"
+-            className="btn btn-analyze"
+-            type="button"
+-            disabled={isEmpty || analyzing}
+-            onClick={onAnalyze}
+-          >
+-            {analyzing ? (
+-              <>
+-                <span className="spinner-sm" />
+-                Analyzing…
+-              </>
+-            ) : (
+-              <>
+-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+-                  <circle cx="12" cy="12" r="3" />
+-                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+-                </svg>
+-                Analyze with AI
+-              </>
++        {(onAnalyze || onReview) && (
++          <div className="code-viewer-actions">
++            {onReview && (
++              <button
++                id="maintainability-btn"
++                className="btn btn-analyze"
++                type="button"
++                disabled={isEmpty || reviewing}
++                onClick={onReview}
++              >
++                {reviewing ? (
++                  <>
++                    <span className="spinner-sm" />
++                    Reviewing…
++                  </>
++                ) : (
++                  'Code review'
++                )}
++              </button>
++            )}
++            {onAnalyze && (
++              <button
++                id="analyze-ai-btn"
++                className="btn btn-analyze"
++                type="button"
++                disabled={isEmpty || analyzing}
++                onClick={onAnalyze}
++              >
++                {analyzing ? (
++                  <>
++                    <span className="spinner-sm" />
++                    Analyzing…
++                  </>
++                ) : (
++                  <>
++                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
++                      <circle cx="12" cy="12" r="3" />
++                      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
++                    </svg>
++                    Analyze with AI
++                  </>
++                )}
++              </button>
+             )}
+-          </button>
++          </div>
+         )}
+       </div>
+ 
+diff --git a/frontend/src/index.css b/frontend/src/index.css
+index 57a6f45..4e419d7 100644
+--- a/frontend/src/index.css
++++ b/frontend/src/index.css
+@@ -1000,6 +1000,13 @@ a {
+ 	white-space: nowrap;
+ }
+ 
++.code-viewer-actions {
++	display: flex;
++	align-items: center;
++	gap: 8px;
++	flex-shrink: 0;
++}
++
+ .code-viewer-lang-badge {
+ 	font-size: 0.68rem;
+ 	text-transform: uppercase;
+@@ -1147,6 +1154,92 @@ a {
+ 	line-height: 1.5;
+ }
+ 
++.maintainability-panel {
++	margin-top: 16px;
++	padding-top: 16px;
++	border-top: 1px solid var(--border);
++	display: grid;
++	gap: 10px;
++}
++
++.maintainability-score {
++	font-size: 1.6rem;
++	font-weight: 700;
++	line-height: 1;
++}
++
++.maintainability-score span {
++	font-size: 0.85rem;
++	font-weight: 500;
++	color: var(--muted);
++}
++
++.finding-list {
++	display: grid;
++	gap: 8px;
++	margin: 0;
++	padding: 0;
++	list-style: none;
++}
++
++.finding {
++	display: flex;
++	gap: 8px;
++	align-items: flex-start;
++}
++
++.finding-body {
++	display: grid;
++	gap: 2px;
++	min-width: 0;
++}
++
++.finding-title {
++	margin: 0;
++	font-weight: 600;
++}
++
++.finding-category,
++.finding-detail {
++	margin: 0;
++	color: var(--muted);
++}
++
++.finding-category {
++	font-size: 0.75rem;
++	text-transform: capitalize;
++}
++
++.severity {
++	flex-shrink: 0;
++	font-size: 0.68rem;
++	text-transform: uppercase;
++	letter-spacing: 0.06em;
++	padding: 2px 8px;
++	border-radius: 999px;
++}
++
++.severity-low {
++	color: var(--accent);
++	background: rgba(34, 197, 94, 0.12);
++}
++
++.severity-medium {
++	color: #fbbf24;
++	background: rgba(251, 191, 36, 0.12);
++}
++
++.severity-high {
++	color: #f87171;
++	background: rgba(248, 113, 113, 0.12);
++}
++
++.upload-actions {
++	display: flex;
++	gap: 8px;
++	flex-wrap: wrap;
++}
++
+ /* GitHub file hint */
+ .github-file-hint {
+ 	display: flex;
+diff --git a/frontend/src/pages/DashboardPage.tsx b/frontend/src/pages/DashboardPage.tsx
+index 9775006..b5fcae3 100644
+--- a/frontend/src/pages/DashboardPage.tsx
++++ b/frontend/src/pages/DashboardPage.tsx
+@@ -8,7 +8,10 @@ import CodeViewer from '../components/CodeViewer';
+ import FileTree from '../components/FileTree';
+ 
+ const API_URL = `${API_BASE_URL}/api/explain`;
++const REVIEW_URL = `${API_BASE_URL}/api/maintainability`;
+ const IMPORT_URL = `${API_BASE_URL}/api/upload-repo`;
++const UPLOAD_EXTENSIONS = ['.js', '.ts', '.tsx', '.jsx', '.py', '.java', '.go'];
++const UPLOAD_ACCEPT = UPLOAD_EXTENSIONS.join(',');
+ 
+ type Status = 'idle' | 'loading' | 'success' | 'error';
+ type ImportStatus = 'idle' | 'loading' | 'success' | 'error';
+@@ -38,6 +41,58 @@ type AnalysisSummary = {
+ 
+ type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+ 
++type Smell = {
++  category: string;
++  severity: 'low' | 'medium' | 'high';
++  title: string;
++  detail: string;
++};
++
++function MaintainabilityPanel({
++  status,
++  score,
++  summary,
++  smells,
++  error,
++}: {
++  status: Status;
++  score: number | null;
++  summary: string;
++  smells: Smell[];
++  error: string;
++}) {
++  if (status === 'idle') return null;
++  return (
++    <div className="maintainability-panel">
++      <h3>Maintainability</h3>
++      {status === 'loading' && <p className="muted">Scoring this file…</p>}
++      {status === 'error' && error && <div className="error-banner">{error}</div>}
++      {status === 'success' && (
++        <>
++          <p className="maintainability-score">{score}<span> / 100</span></p>
++          <p>{summary}</p>
++          {smells.length === 0 ? (
++            <p className="muted">No findings.</p>
++          ) : (
++            <ul className="finding-list">
++              {smells.map((smell, index) => (
++                <li key={`${smell.category}-${smell.title}-${index}`} className="finding">
++                  <span className={`severity severity-${smell.severity}`}>{smell.severity}</span>
++                  <div className="finding-body">
++                    <p className="finding-title">{smell.title}</p>
++                    <p className="finding-category">{smell.category}</p>
++                    <p className="finding-detail">{smell.detail}</p>
++                  </div>
++                </li>
++              ))}
++            </ul>
++          )}
++        </>
++      )}
++    </div>
++  );
++}
++
+ export default function DashboardPage() {
+   const { email, logout, token } = useAuth();
+   const [file, setFile] = useState<File | null>(null);
+@@ -62,6 +117,11 @@ export default function DashboardPage() {
+   const [importedFiles, setImportedFiles] = useState<ImportedFile[]>([]);
+   const [importMeta, setImportMeta] = useState<ImportMeta | null>(null);
+   const [selectedFile, setSelectedFile] = useState<ImportedFile | null>(null);
++  const [reviewStatus, setReviewStatus] = useState<Status>('idle');
++  const [score, setScore] = useState<number | null>(null);
++  const [summary, setSummary] = useState('');
++  const [smells, setSmells] = useState<Smell[]>([]);
++  const [reviewError, setReviewError] = useState('');
+ 
+   useEffect(() => {
+     const fetchAnalyses = async () => {
+@@ -106,8 +166,9 @@ export default function DashboardPage() {
+   };
+ 
+   const pick = (f: File) => {
+-    if (!f.name.endsWith('.js')) {
+-      setError('Only .js files are accepted.');
++    const allowed = UPLOAD_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext));
++    if (!allowed) {
++      setError(`Only ${UPLOAD_EXTENSIONS.join(', ')} files are accepted.`);
+       setFile(null);
+       return;
+     }
+@@ -118,6 +179,15 @@ export default function DashboardPage() {
+     setSaveState('idle');
+     setSaveError('');
+     setLatestAnalysisId(null);
++    clearReview();
++  };
++
++  const clearReview = () => {
++    setReviewStatus('idle');
++    setScore(null);
++    setSummary('');
++    setSmells([]);
++    setReviewError('');
+   };
+ 
+   const onDrop = (e: DragEvent<HTMLDivElement>) => {
+@@ -215,6 +285,7 @@ export default function DashboardPage() {
+     setSelectedFile(null);
+     setExp('');
+     setStatus('idle');
++    clearReview();
+   };
+ 
+   const analyzeSelectedFile = async () => {
+@@ -249,6 +320,69 @@ export default function DashboardPage() {
+     }
+   };
+ 
++  const readReview = async (res: Response) => {
++    const data = await res.json();
++    if (!res.ok) throw new Error(data.error || 'Code review failed');
++    setScore(typeof data.score === 'number' ? data.score : null);
++    setSummary(typeof data.summary === 'string' ? data.summary : '');
++    setSmells(Array.isArray(data.smells) ? data.smells : []);
++    setReviewStatus('success');
++  };
++
++  const reviewSelectedFile = async () => {
++    if (!selectedFile || !token) return;
++    setReviewStatus('loading');
++    setReviewError('');
++    setScore(null);
++    setSummary('');
++    setSmells([]);
++    try {
++      const res = await fetch(REVIEW_URL, {
++        method: 'POST',
++        headers: {
++          'Content-Type': 'application/json',
++          Authorization: `Bearer ${token}`,
++        },
++        body: JSON.stringify({
++          code: selectedFile.content,
++          filename: selectedFile.name,
++          language: selectedFile.language,
++        }),
++      });
++      await readReview(res);
++    } catch (err: unknown) {
++      setReviewError(err instanceof Error ? err.message : 'Code review failed');
++      setReviewStatus('error');
++    }
++  };
++
++  const reviewUpload = async () => {
++    if (!file) return;
++    if (!token) {
++      setReviewError('Please login first.');
++      setReviewStatus('error');
++      return;
++    }
++    setReviewStatus('loading');
++    setReviewError('');
++    setScore(null);
++    setSummary('');
++    setSmells([]);
++    const form = new FormData();
++    form.append('file', file);
++    try {
++      const res = await fetch(REVIEW_URL, {
++        method: 'POST',
++        body: form,
++        headers: { Authorization: `Bearer ${token}` },
++      });
++      await readReview(res);
++    } catch (err: unknown) {
++      setReviewError(err instanceof Error ? err.message : 'Code review failed');
++      setReviewStatus('error');
++    }
++  };
++
+   const handleFileSelect = useCallback((f: ImportedFile) => {
+     setSelectedFile(f);
+     setExp('');
+@@ -257,6 +391,11 @@ export default function DashboardPage() {
+     setSaveState('idle');
+     setSaveError('');
+     setLatestAnalysisId(null);
++    setReviewStatus('idle');
++    setScore(null);
++    setSummary('');
++    setSmells([]);
++    setReviewError('');
+   }, []);
+ 
+   const saveAnalysis = async () => {
+@@ -341,7 +480,7 @@ export default function DashboardPage() {
+           <section className="workspace-grid simple">
+             <div className="card upload-card">
+               <h2>Upload a file</h2>
+-              <p className="muted">Drop a single .js file to get an explanation.</p>
++              <p className="muted">Drop a source file ({UPLOAD_EXTENSIONS.join(', ')}) to get an explanation.</p>
+               <div
+                 className={`dropzone ${dragging ? 'active' : ''}`}
+                 onClick={() => inputRef.current?.click()}
+@@ -352,7 +491,7 @@ export default function DashboardPage() {
+                 <div className="drop-icon" />
+                 <p>{file ? file.name : 'Drop repository archive here'}</p>
+                 <span>or browse local files</span>
+-                <input ref={inputRef} type="file" accept=".js" onChange={onFileChange} />
++                <input ref={inputRef} type="file" accept={UPLOAD_ACCEPT} onChange={onFileChange} />
+               </div>
+ 
+               <div className="github-import-section">
+@@ -473,9 +612,14 @@ export default function DashboardPage() {
+               {errorMsg && <div className="error-banner">{errorMsg}</div>}
+               <div className="upload-footer">
+                 <span className="muted">Encrypted transfer · temporary processing</span>
+-                <button className="btn btn-primary" type="button" disabled={!file || status === 'loading'} onClick={submit}>
+-                  {status === 'loading' ? 'Analysing...' : 'Start Analysis'}
+-                </button>
++                <div className="upload-actions">
++                  <button className="btn btn-ghost" type="button" disabled={!file || reviewStatus === 'loading'} onClick={reviewUpload}>
++                    {reviewStatus === 'loading' ? 'Reviewing...' : 'Code review'}
++                  </button>
++                  <button className="btn btn-primary" type="button" disabled={!file || status === 'loading'} onClick={submit}>
++                    {status === 'loading' ? 'Analysing...' : 'Start Analysis'}
++                  </button>
++                </div>
+               </div>
+             </div>
+ 
+@@ -514,11 +658,18 @@ export default function DashboardPage() {
+                   {saveError && <div className="error-banner">{saveError}</div>}
+                 </div>
+               )}
+-              {status === 'idle' && (
++              {status === 'idle' && reviewStatus === 'idle' && (
+                 <div className="status-list">
+                   <p className="muted">Upload a file to start the analysis.</p>
+                 </div>
+               )}
++              <MaintainabilityPanel
++                status={reviewStatus}
++                score={score}
++                summary={summary}
++                smells={smells}
++                error={reviewError}
++              />
+             </div>
+           </section>
+         )}
+@@ -533,6 +684,7 @@ export default function DashboardPage() {
+                   setSelectedFile(null);
+                   setExp('');
+                   setStatus('idle');
++                  clearReview();
+                 }}
+               >
+                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+@@ -568,6 +720,8 @@ export default function DashboardPage() {
+                     language={selectedFile!.language}
+                     onAnalyze={analyzeSelectedFile}
+                     analyzing={status === 'loading'}
++                    onReview={reviewSelectedFile}
++                    reviewing={reviewStatus === 'loading'}
+                   />
+                 </div>
+               </div>
+@@ -614,7 +768,7 @@ export default function DashboardPage() {
+                   </div>
+                 )}
+ 
+-                {status === 'idle' && (
++                {status === 'idle' && reviewStatus === 'idle' && (
+                   <div className="analysis-placeholder">
+                     <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                       <circle cx="12" cy="12" r="3" />
+@@ -623,6 +777,13 @@ export default function DashboardPage() {
+                     <p>Click <strong>"Analyze with AI"</strong> to get a detailed explanation of this file.</p>
+                   </div>
+                 )}
++                <MaintainabilityPanel
++                  status={reviewStatus}
++                  score={score}
++                  summary={summary}
++                  smells={smells}
++                  error={reviewError}
++                />
+               </div>
+             </section>
+           </>

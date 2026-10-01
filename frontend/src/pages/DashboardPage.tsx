@@ -41,22 +41,24 @@ type AnalysisSummary = {
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
-type Finding = {
+type Smell = {
+  category: string;
   severity: 'low' | 'medium' | 'high';
-  message: string;
+  title: string;
+  detail: string;
 };
 
 function MaintainabilityPanel({
   status,
   score,
   summary,
-  review,
+  smells,
   error,
 }: {
   status: Status;
   score: number | null;
   summary: string;
-  review: Finding[];
+  smells: Smell[];
   error: string;
 }) {
   if (status === 'idle') return null;
@@ -69,14 +71,18 @@ function MaintainabilityPanel({
         <>
           <p className="maintainability-score">{score}<span> / 100</span></p>
           <p>{summary}</p>
-          {review.length === 0 ? (
+          {smells.length === 0 ? (
             <p className="muted">No findings.</p>
           ) : (
             <ul className="finding-list">
-              {review.map((finding, index) => (
-                <li key={`${finding.severity}-${index}`} className="finding">
-                  <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
-                  <span>{finding.message}</span>
+              {smells.map((smell, index) => (
+                <li key={`${smell.category}-${smell.title}-${index}`} className="finding">
+                  <span className={`severity severity-${smell.severity}`}>{smell.severity}</span>
+                  <div className="finding-body">
+                    <p className="finding-title">{smell.title}</p>
+                    <p className="finding-category">{smell.category}</p>
+                    <p className="finding-detail">{smell.detail}</p>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -114,7 +120,7 @@ export default function DashboardPage() {
   const [reviewStatus, setReviewStatus] = useState<Status>('idle');
   const [score, setScore] = useState<number | null>(null);
   const [summary, setSummary] = useState('');
-  const [review, setReview] = useState<Finding[]>([]);
+  const [smells, setSmells] = useState<Smell[]>([]);
   const [reviewError, setReviewError] = useState('');
 
   useEffect(() => {
@@ -180,7 +186,7 @@ export default function DashboardPage() {
     setReviewStatus('idle');
     setScore(null);
     setSummary('');
-    setReview([]);
+    setSmells([]);
     setReviewError('');
   };
 
@@ -319,7 +325,7 @@ export default function DashboardPage() {
     if (!res.ok) throw new Error(data.error || 'Code review failed');
     setScore(typeof data.score === 'number' ? data.score : null);
     setSummary(typeof data.summary === 'string' ? data.summary : '');
-    setReview(Array.isArray(data.review) ? data.review : []);
+    setSmells(Array.isArray(data.smells) ? data.smells : []);
     setReviewStatus('success');
   };
 
@@ -329,7 +335,7 @@ export default function DashboardPage() {
     setReviewError('');
     setScore(null);
     setSummary('');
-    setReview([]);
+    setSmells([]);
     try {
       const res = await fetch(REVIEW_URL, {
         method: 'POST',
@@ -361,7 +367,7 @@ export default function DashboardPage() {
     setReviewError('');
     setScore(null);
     setSummary('');
-    setReview([]);
+    setSmells([]);
     const form = new FormData();
     form.append('file', file);
     try {
@@ -388,7 +394,7 @@ export default function DashboardPage() {
     setReviewStatus('idle');
     setScore(null);
     setSummary('');
-    setReview([]);
+    setSmells([]);
     setReviewError('');
   }, []);
 
@@ -661,7 +667,7 @@ export default function DashboardPage() {
                 status={reviewStatus}
                 score={score}
                 summary={summary}
-                review={review}
+                smells={smells}
                 error={reviewError}
               />
             </div>
@@ -775,7 +781,7 @@ export default function DashboardPage() {
                   status={reviewStatus}
                   score={score}
                   summary={summary}
-                  review={review}
+                  smells={smells}
                   error={reviewError}
                 />
               </div>
