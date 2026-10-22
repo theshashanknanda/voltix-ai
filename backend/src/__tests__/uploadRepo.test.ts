@@ -68,6 +68,55 @@ describe('POST /api/upload-repo', () => {
     }));
   });
 
+  it('skips secret files without downloading them and reports the count', async () => {
+    const tree = {
+      tree: [
+        { path: '.env', type: 'blob' },
+        { path: 'config/.env.production', type: 'blob' },
+        { path: 'keys/id_rsa', type: 'blob' },
+        { path: 'src/index.ts', type: 'blob' },
+      ],
+    };
+    const fetchMock = (global as any).fetch as jest.Mock;
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ default_branch: 'main' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => tree })
+      .mockResolvedValueOnce({ ok: true, headers: { get: () => 'text/plain' }, text: async () => 'const a = 1;' });
+
+    const response = await request(app)
+      .post('/api/upload-repo')
+      .send({ url: 'https://github.com/test-owner/test-repo' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.files.map((f: { path: string }) => f.path)).toEqual(['src/index.ts']);
+    expect(response.body.meta.skippedSecrets).toBe(3);
+    expect(response.body.meta.warning).toBe('Skipped 3 secret file(s) (.env or private keys).');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2][0]).toContain('src/index.ts');
+  });
+
+  it('returns 200 with no files when the repo only has secret files', async () => {
+    const fetchMock = (global as any).fetch as jest.Mock;
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ default_branch: 'main' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ tree: [
+        { path: '.env', type: 'blob' },
+        { path: 'certs/server.pem', type: 'blob' },
+      ] }) });
+
+    const response = await request(app)
+      .post('/api/upload-repo')
+      .send({ url: 'https://github.com/test-owner/test-repo' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.files).toEqual([]);
+    expect(response.body.meta).toEqual(expect.objectContaining({
+      skippedSecrets: 2,
+      warning: 'Skipped 2 secret file(s) (.env or private keys).',
+    }));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('should return 400 for invalid GitHub URLs', async () => {
     const response = await request(app)
       .post('/api/upload-repo')

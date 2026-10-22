@@ -15,6 +15,7 @@ jest.mock('openai', () => {
 });
 
 import maintainabilityRouter from '../api/maintainability';
+import { SECRET_MESSAGE } from '../secrets';
 
 const app = express();
 app.use(express.json());
@@ -37,9 +38,9 @@ describe('POST /api/maintainability', () => {
       score: 142,
       summary: 'Readable, but one function does too much.',
       smells: [
-        { category: 'nested conditionals', severity: 'warning', title: 'Nested conditionals', detail: 'Three levels of ifs.', why: 'Nested branches make execution paths difficult to test.', bestPractice: 'Use guard clauses in `run` to return early for invalid input.' },
-        { category: 'god function', severity: 'critical', title: 'God function', detail: 'run does everything.', why: 'Changes to validation can break persistence in the same function.', bestPractice: 'Extract `validateInput` and `saveResult`, then keep `run` as orchestration.' },
-        { category: 'magic number', severity: 'info', title: 'Magic number', detail: '42 is unexplained.', why: 'The meaning of this threshold is hidden from future maintainers.', bestPractice: 'Replace `42` with a named constant that describes the threshold.' },
+        { category: 'nested conditionals', severity: 'warning', title: 'Nested conditionals', detail: 'Three levels of ifs.', why: 'Nested branches make execution paths difficult to test.', bestPractice: 'Use guard clauses in `run` to return early for invalid input.', startLine: 1, endLine: 1 },
+        { category: 'god function', severity: 'critical', title: 'God function', detail: 'run does everything.', why: 'Changes to validation can break persistence in the same function.', bestPractice: 'Extract `validateInput` and `saveResult`, then keep `run` as orchestration.', startLine: 1, endLine: 1 },
+        { category: 'magic number', severity: 'info', title: 'Magic number', detail: '42 is unexplained.', why: 'The meaning of this threshold is hidden from future maintainers.', bestPractice: 'Replace `42` with a named constant that describes the threshold.', startLine: 1, endLine: 1 },
         { category: 'spaghetti', severity: 'high', title: 'Unknown category', detail: 'Dropped.' },
         { category: 'poor naming', severity: 'banana', title: 'Bad name', detail: 'Dropped severity.' },
         { category: 'duplication', severity: 'high', title: '   ', detail: 'Blank title.' },
@@ -59,9 +60,9 @@ describe('POST /api/maintainability', () => {
     expect(response.body.score).toBe(100);
     expect(response.body.summary).toBe(payload.summary);
     expect(response.body.smells).toEqual([
-      { category: 'deep nesting', severity: 'medium', title: 'Nested conditionals', detail: 'Three levels of ifs.', why: 'Nested branches make execution paths difficult to test.', bestPractice: 'Use guard clauses in `run` to return early for invalid input.' },
-      { category: 'long method', severity: 'high', title: 'God function', detail: 'run does everything.', why: 'Changes to validation can break persistence in the same function.', bestPractice: 'Extract `validateInput` and `saveResult`, then keep `run` as orchestration.' },
-      { category: 'magic values', severity: 'low', title: 'Magic number', detail: '42 is unexplained.', why: 'The meaning of this threshold is hidden from future maintainers.', bestPractice: 'Replace `42` with a named constant that describes the threshold.' },
+      { category: 'deep nesting', severity: 'medium', title: 'Nested conditionals', detail: 'Three levels of ifs.', why: 'Nested branches make execution paths difficult to test.', bestPractice: 'Use guard clauses in `run` to return early for invalid input.', startLine: 1, endLine: 1 },
+      { category: 'long method', severity: 'high', title: 'God function', detail: 'run does everything.', why: 'Changes to validation can break persistence in the same function.', bestPractice: 'Extract `validateInput` and `saveResult`, then keep `run` as orchestration.', startLine: 1, endLine: 1 },
+      { category: 'magic values', severity: 'low', title: 'Magic number', detail: '42 is unexplained.', why: 'The meaning of this threshold is hidden from future maintainers.', bestPractice: 'Replace `42` with a named constant that describes the threshold.', startLine: 1, endLine: 1 },
     ]);
     expect(mockCreate).toHaveBeenCalled();
   });
@@ -168,6 +169,7 @@ describe('POST /api/maintainability', () => {
     detail: 'The handler has three nested checks.',
     why: 'More branches make the handler harder to test.',
     bestPractice: 'Use an early return for invalid input before processing the request.',
+    startLine: 1, endLine: 1,
   };
 
   it.each(['why', 'bestPractice'])('rejects a finding with missing, blank, or non-string %s', async (field) => {
@@ -187,6 +189,10 @@ describe('POST /api/maintainability', () => {
     { smells: [{ ...validSmell, detail: ' ' }] },
     { smells: [{ ...validSmell, category: '__proto__' }] },
     { smells: [{ ...validSmell, severity: 'constructor' }] },
+    { smells: [{ ...validSmell, startLine: undefined, endLine: undefined }] },
+    { smells: [{ ...validSmell, startLine: 0 }] },
+    { smells: [{ ...validSmell, startLine: '1', endLine: '1' }] },
+    { smells: [{ ...validSmell, startLine: 1.5, endLine: 2 }] },
     { score: null }, { score: true }, { score: 'NaN' }, { summary: ' ' },
   ])('safely rejects malformed results: %p', async (overrides) => {
     mockCreate.mockResolvedValue({ choices: [{ message: { content: JSON.stringify({
@@ -196,6 +202,30 @@ describe('POST /api/maintainability', () => {
       .send({ code: 'function run() {}' });
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: 'AI error: Maintainability analysis failed.' });
+  });
+
+  it('numbers the prompt lines, keeps in-range findings, and drops ones past the last line', async () => {
+    const sixLines = 'function run(x) {\n  if (x) {\n    return 42;\n  }\n  return 0;\n}\n';
+    const kept = { ...validSmell, startLine: 2, endLine: 4 };
+    mockCreate.mockResolvedValue({ choices: [{ message: { content: JSON.stringify({
+      score: 60, summary: 'Nested.', smells: [kept, { ...validSmell, title: 'Past the end', startLine: 5, endLine: 7 }],
+    }) } }] });
+    const response = await request(app).post('/api/maintainability').set(authHeader())
+      .send({ code: sixLines, filename: 'run.js', language: 'javascript' });
+    expect(response.status).toBe(200);
+    expect(response.body.smells).toEqual([kept]);
+    const prompt: string = mockCreate.mock.calls[0][0].messages[0].content;
+    expect(prompt).toContain('1| function run(x) {');
+    expect(prompt).toContain('6| }');
+    expect(prompt).not.toContain('7|');
+  });
+
+  it('returns 400 for code with a credential literal without calling Groq', async () => {
+    const response = await request(app).post('/api/maintainability').set(authHeader())
+      .send({ code: 'const API_KEY = "sk-test-not-a-real-key";\n', filename: 'config.js' });
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: SECRET_MESSAGE });
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it('trims explanation fields and preserves Markdown rewrite guidance', async () => {

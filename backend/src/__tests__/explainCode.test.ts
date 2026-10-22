@@ -28,6 +28,7 @@ jest.mock('../middleware/requireAuth', () => ({
 
 // Import the router AFTER defining mocks
 import explainRouter from '../api/explainCode';
+import { SECRET_MESSAGE } from '../secrets';
 
 const app = express();
 app.use(express.json());
@@ -122,6 +123,18 @@ describe('POST /api/explain', () => {
     expect(response.body.explanation).toBe(mockExplanation);
     expect(promptText()).toContain('following python code');
     expect(promptText()).toContain('notes.txt');
+  });
+
+  it.each(['json', 'upload'])('returns 400 for a private key sent as %s without calling Groq', async (mode) => {
+    const key = '-----BEGIN RSA PRIVATE KEY-----\nnot-a-real-key\n-----END RSA PRIVATE KEY-----\n';
+    const call = request(app).post('/api/explain');
+    const response = mode === 'json'
+      ? await call.send({ code: key, filename: 'key.js' })
+      : await call.attach('file', Buffer.from(key), 'key.js');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: SECRET_MESSAGE });
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   // TEST 3.3

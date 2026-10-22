@@ -15,6 +15,7 @@ jest.mock('openai', () => {
 });
 
 import explainRouter from '../api/explainCode';
+import { SECRET_MESSAGE } from '../secrets';
 
 const app = express();
 app.use(express.json());
@@ -137,6 +138,14 @@ describe('POST /api/explain-function', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  it('returns 400 for a file with a credential literal without calling Groq', async () => {
+    const response = await request(app).post('/api/explain-function').set(authHeader())
+      .send({ ...body, code: `const password = "hunter2xyz";\n${body.code}` });
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: SECRET_MESSAGE });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['the provider throws', () => mockCreate.mockRejectedValue(new Error(PROVIDER_DUMP))],
     ['the reply is empty', () => reply(null)],
@@ -145,5 +154,74 @@ describe('POST /api/explain-function', () => {
     const response = await request(app).post('/api/explain-function').set(authHeader()).send(body);
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: 'AI error: Function explanation failed.' });
+  });
+});
+
+describe('POST /api/explain-context', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  const A = "import { add } from './b';\nexport const total = add(1, 2);\n";
+  const neighbor = (path: string) => ({ path, content: `export const ${path.replace(/\W/g, '')} = 1;\n` });
+  const send = (extra: object) => request(app).post('/api/explain-context').set(authHeader())
+    .send({ code: A, filename: 'src/a.ts', language: 'typescript', ...extra });
+
+  it('explains a file with its imported neighbor and names both paths', async () => {
+    reply('`src/a.ts` calls `add` from `src/b.ts`.');
+    const response = await send({ neighbors: [{ path: 'src/b.ts', content: JS_SOURCE }] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.explanation).toMatch(/^> Context: included src\/b\.ts\.\n\n/);
+    expect(response.body.explanation).toContain('src/a.ts');
+    expect(promptText()).toContain('Imported file: src/b.ts');
+    expect(promptText()).toContain(JS_SOURCE);
+  });
+
+  it('says the file is explained alone when no valid neighbor is sent', async () => {
+    reply('Adds two numbers.');
+    const response = await send({ neighbors: [{ path: 42, content: 'x' }, { path: 'src/c.ts', content: ' ' }, null] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.explanation).toBe('> No imported neighbor was included; this explains src/a.ts alone.\n\nAdds two numbers.');
+    expect(promptText()).not.toContain('Imported file:');
+  });
+
+  it('sends only 3 neighbors and lists the rest as left out', async () => {
+    reply('Explained.');
+    const neighbors = ['n1.ts', 'n2.ts', 'n3.ts', 'n4.ts'].map(neighbor);
+    const response = await send({ neighbors, omittedPaths: ['n5.ts', 7] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.explanation).toMatch(
+      /^> Context: included n1\.ts, n2\.ts, n3\.ts\. Left out \(limit 3\): n4\.ts, n5\.ts\.\n\n/,
+    );
+    expect(promptText()).toContain('Imported file: n3.ts');
+    expect(promptText()).not.toContain('Imported file: n4.ts');
+  });
+
+  it('returns 400 for blank code and 401 without a JWT', async () => {
+    const blank = await send({ code: '  ' });
+    const noJwt = await request(app).post('/api/explain-context').send({ code: A });
+    expect(blank.status).toBe(400);
+    expect(blank.body.error).toBe('Code content is empty.');
+    expect(noJwt.status).toBe(401);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when an included neighbor holds a private key, without calling Groq', async () => {
+    const key = { path: 'src/key.ts', content: '-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n' };
+    const response = await send({ neighbors: [neighbor('src/b.ts'), key] });
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: SECRET_MESSAGE });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the provider throws', () => mockCreate.mockRejectedValue(new Error(PROVIDER_DUMP))],
+    ['the reply is empty', () => reply('  ')],
+  ])('returns a safe 500 when %s', async (_label, arrange) => {
+    arrange();
+    const response = await send({});
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: 'AI error: Context explanation failed.' });
   });
 });
