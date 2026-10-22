@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
+import Markdown from '../components/Markdown';
 import { useAuth } from '../auth/authContext';
 import { API_BASE_URL } from '../config';
 import CodeViewer from '../components/CodeViewer';
@@ -233,7 +233,7 @@ export default function RepoAnalysisPage() {
               </div>
             ) : (
               <div className="markdown">
-                <ReactMarkdown>{analysis.explanation}</ReactMarkdown>
+                <Markdown>{analysis.explanation}</Markdown>
               </div>
             )}
           </div>

@@ -6,6 +6,7 @@ import explainRouter from './api/explainCode';
 import maintainabilityRouter from './api/maintainability';
 import authRouter from './api/auth';
 import uploadRepoRouter from './api/uploadRepo';
+import uploadZipRouter from './api/uploadZip';
 import analysesRouter from './api/analyses';
 
 const app = express();
@@ -29,6 +30,7 @@ app.use('/api/auth', authRouter);
 app.use('/api', explainRouter);
 app.use('/api', maintainabilityRouter);
 app.use('/api', uploadRepoRouter);
+app.use('/api', uploadZipRouter);
 app.use('/api', analysesRouter);
 
 // For local development and testing
