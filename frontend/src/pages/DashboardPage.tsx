@@ -8,9 +8,16 @@ import CodeViewer from '../components/CodeViewer';
 import FileTree from '../components/FileTree';
 
 const API_URL = `${API_BASE_URL}/api/explain`;
+const EXPLAIN_FUNCTION_URL = `${API_BASE_URL}/api/explain-function`;
+const DOCUMENT_URL = `${API_BASE_URL}/api/document`;
 const REVIEW_URL = `${API_BASE_URL}/api/maintainability`;
 const IMPORT_URL = `${API_BASE_URL}/api/upload-repo`;
-const UPLOAD_EXTENSIONS = ['.js', '.ts', '.tsx', '.jsx', '.py', '.java', '.go'];
+// Labels match the backend's SOURCE_LANGUAGES.
+const UPLOAD_LANGUAGES: Record<string, string> = {
+  '.js': 'javascript', '.ts': 'typescript', '.tsx': 'tsx', '.jsx': 'jsx',
+  '.py': 'python', '.java': 'java', '.go': 'go',
+};
+const UPLOAD_EXTENSIONS = Object.keys(UPLOAD_LANGUAGES);
 const UPLOAD_ACCEPT = UPLOAD_EXTENSIONS.join(',');
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
@@ -113,7 +120,6 @@ function MaintainabilityPanel({
 
 export default function DashboardPage() {
   const { email, logout, token } = useAuth();
-  const [file, setFile] = useState<File | null>(null);
   const [explanation, setExp] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [errorMsg, setError] = useState('');
@@ -141,6 +147,8 @@ export default function DashboardPage() {
   const [smells, setSmells] = useState<Smell[]>([]);
   const [reviewError, setReviewError] = useState('');
   const reviewRequestId = useRef(0);
+  const [docStatus, setDocStatus] = useState<Status>('idle');
+  const [docError, setDocError] = useState('');
 
   // A response for a previous file (or an unmounted dashboard) must not appear
   // beside the current file. Opening finding details itself makes no requests.
@@ -194,65 +202,6 @@ export default function DashboardPage() {
       setDeleteError(err instanceof Error ? err.message : 'Failed to delete analysis');
     } finally {
       setDeletingId(null);
-    }
-  };
-
-  const pick = (f: File) => {
-    clearReview();
-    const allowed = UPLOAD_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext));
-    if (!allowed) {
-      setError(`Only ${UPLOAD_EXTENSIONS.join(', ')} files are accepted.`);
-      setFile(null);
-      return;
-    }
-    setError('');
-    setFile(f);
-    setStatus('idle');
-    setExp('');
-    setSaveState('idle');
-    setSaveError('');
-    setLatestAnalysisId(null);
-  };
-
-  const onDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragging(false);
-    const f = e.dataTransfer.files[0];
-    if (f) pick(f);
-  };
-
-  const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) pick(f);
-  };
-
-  const submit = async () => {
-    if (!file) return;
-    if (!token) {
-      setError('Please login first.');
-      return;
-    }
-    setStatus('loading');
-    setExp('');
-    setError('');
-    setSaveState('idle');
-    setSaveError('');
-    setLatestAnalysisId(null);
-    const form = new FormData();
-    form.append('file', file);
-    try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        body: form,
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unknown error');
-      setExp(data.explanation);
-      setStatus('success');
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
-      setStatus('error');
     }
   };
 
@@ -313,7 +262,7 @@ export default function DashboardPage() {
     clearReview();
   };
 
-  const analyzeSelectedFile = async () => {
+  const analyzeSelectedFile = async (functionName?: string) => {
     if (!selectedFile || !token) return;
     setStatus('loading');
     setExp('');
@@ -321,9 +270,11 @@ export default function DashboardPage() {
     setSaveState('idle');
     setSaveError('');
     setLatestAnalysisId(null);
+    setDocStatus('idle');
+    setDocError('');
 
     try {
-      const res = await fetch(API_URL, {
+      const res = await fetch(functionName ? EXPLAIN_FUNCTION_URL : API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -333,6 +284,7 @@ export default function DashboardPage() {
           code: selectedFile.content,
           filename: selectedFile.name,
           language: selectedFile.language,
+          functionName,
         }),
       });
       const data = await res.json();
@@ -391,32 +343,39 @@ export default function DashboardPage() {
     }
   };
 
-  const reviewUpload = async () => {
-    if (!file) return;
-    if (!token) {
-      setReviewError('Please login first.');
-      setReviewStatus('error');
-      return;
-    }
-    const requestId = ++reviewRequestId.current;
-    setReviewStatus('loading');
-    setReviewError('');
-    setScore(null);
-    setSummary('');
-    setSmells([]);
-    const form = new FormData();
-    form.append('file', file);
+  const documentSelectedFile = async () => {
+    if (!selectedFile || !token) return;
+    const { path } = selectedFile;
+    setDocStatus('loading');
+    setDocError('');
     try {
-      const res = await fetch(REVIEW_URL, {
+      const res = await fetch(DOCUMENT_URL, {
         method: 'POST',
-        body: form,
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          code: selectedFile.content,
+          filename: selectedFile.name,
+          language: selectedFile.language,
+        }),
       });
-      await readReview(res, requestId);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Documentation failed');
+      if (typeof data.code !== 'string' || !data.code.trim()) throw new Error('Documentation failed');
+      // Only touch the viewer if the user is still on the file that was sent.
+      setSelectedFile((cur) => (cur?.path === path ? { ...cur, content: data.code } : cur));
+      setExp('');
+      setStatus('idle');
+      setSaveState('idle');
+      setSaveError('');
+      setLatestAnalysisId(null);
+      clearReview();
+      setDocStatus('success');
     } catch (err: unknown) {
-      if (requestId !== reviewRequestId.current) return;
-      setReviewError(err instanceof Error ? err.message : 'Code review failed');
-      setReviewStatus('error');
+      setDocError(err instanceof Error ? err.message : 'Documentation failed');
+      setDocStatus('error');
     }
   };
 
@@ -428,22 +387,51 @@ export default function DashboardPage() {
     setSaveState('idle');
     setSaveError('');
     setLatestAnalysisId(null);
+    setDocStatus('idle');
+    setDocError('');
     clearReview();
   }, [clearReview]);
 
-  const saveAnalysis = async () => {
-    if (!explanation) return;
+  const pick = async (f: File) => {
+    clearReview();
+    const ext = UPLOAD_EXTENSIONS.find((e) => f.name.toLowerCase().endsWith(e));
+    if (!ext) {
+      setError(`Only ${UPLOAD_EXTENSIONS.join(', ')} files are accepted.`);
+      return;
+    }
+    const entry: ImportedFile = { path: f.name, name: f.name, content: await f.text(), language: UPLOAD_LANGUAGES[ext] };
+    setImportStatus('idle');
+    setImportError('');
+    setImportWarning('');
+    setImportMeta(null);
+    setImportedFiles([entry]);
+    handleFileSelect(entry);
+  };
+
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f) pick(f);
+  };
+
+  const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (f) pick(f);
+  };
+
+  const saveAnalysis = async (text: string) => {
+    if (!text || !selectedFile) return;
     if (!token) {
       setSaveError('Please login first.');
       setSaveState('error');
       return;
     }
 
-    const repositoryLabel = selectedFile
-      ? `${importMeta?.owner ?? 'repo'}/${importMeta?.repo ?? 'repo'}:${selectedFile.path}`
-      : file?.name;
-
-    if (!repositoryLabel) return;
+    const repositoryLabel = importMeta
+      ? `${importMeta.owner}/${importMeta.repo}:${selectedFile.path}`
+      : selectedFile.path;
 
     setSaveState('saving');
     setSaveError('');
@@ -456,7 +444,7 @@ export default function DashboardPage() {
         },
         body: JSON.stringify({
           repositoryUrl: repositoryLabel,
-          explanation,
+          explanation: text,
         }),
       });
       const data = await res.json();
@@ -486,9 +474,36 @@ export default function DashboardPage() {
     setSaveState('idle');
     setSaveError('');
     setLatestAnalysisId(null);
+    setDocStatus('idle');
+    setDocError('');
   };
 
   const showCodeViewerLayout = selectedFile !== null;
+  const aiBusy = status === 'loading' || reviewStatus === 'loading' || docStatus === 'loading';
+
+  const saveActions = (text: string) => (
+    <>
+      <div className="analysis-actions">
+        <button
+          className="btn btn-primary"
+          type="button"
+          onClick={() => saveAnalysis(text)}
+          disabled={saveState === 'saving' || saveState === 'saved'}
+        >
+          {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : 'Save analysis'}
+        </button>
+        <button className="btn btn-ghost" type="button" onClick={clearAnalysis}>
+          Clear
+        </button>
+        {latestAnalysisId && (
+          <Link className="btn btn-ghost" to={`/dashboard/repo/${latestAnalysisId}`}>
+            View saved
+          </Link>
+        )}
+      </div>
+      {saveError && <div className="error-banner">{saveError}</div>}
+    </>
+  );
 
   return (
     <div className="page dashboard-page">
@@ -522,7 +537,7 @@ export default function DashboardPage() {
                 onDrop={onDrop}
               >
                 <div className="drop-icon" />
-                <p>{file ? file.name : 'Drop repository archive here'}</p>
+                <p>Drop a source file here</p>
                 <span>or browse local files</span>
                 <input ref={inputRef} type="file" accept={UPLOAD_ACCEPT} onChange={onFileChange} />
               </div>
@@ -644,65 +659,8 @@ export default function DashboardPage() {
 
               {errorMsg && <div className="error-banner">{errorMsg}</div>}
               <div className="upload-footer">
-                <span className="muted">Encrypted transfer · temporary processing</span>
-                <div className="upload-actions">
-                  <button className="btn btn-ghost" type="button" disabled={!file || reviewStatus === 'loading'} onClick={reviewUpload}>
-                    {reviewStatus === 'loading' ? 'Reviewing...' : 'Code review'}
-                  </button>
-                  <button className="btn btn-primary" type="button" disabled={!file || status === 'loading'} onClick={submit}>
-                    {status === 'loading' ? 'Analysing...' : 'Start Analysis'}
-                  </button>
-                </div>
+                <span className="muted">Encrypted transfer · temporary processing · files open in the code viewer</span>
               </div>
-            </div>
-
-            <div className="card output-card">
-              <h2>{status === 'success' ? 'Results' : 'Analysis'}</h2>
-              {status === 'loading' && (
-                <div className="loading-state">
-                  <div className="spinner" />
-                  <div>
-                    <p>Analysis underway…</p>
-                    <span className="muted">Parsing your file and sending it to the model.</span>
-                  </div>
-                </div>
-              )}
-              {status === 'success' && (
-                <div className="markdown">
-                  <ReactMarkdown>{explanation}</ReactMarkdown>
-                  <div className="analysis-actions">
-                    <button
-                      className="btn btn-primary"
-                      type="button"
-                      onClick={saveAnalysis}
-                      disabled={saveState === 'saving' || saveState === 'saved'}
-                    >
-                      {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : 'Save analysis'}
-                    </button>
-                    <button className="btn btn-ghost" type="button" onClick={clearAnalysis}>
-                      Clear
-                    </button>
-                    {latestAnalysisId && (
-                      <Link className="btn btn-ghost" to={`/dashboard/repo/${latestAnalysisId}`}>
-                        View saved
-                      </Link>
-                    )}
-                  </div>
-                  {saveError && <div className="error-banner">{saveError}</div>}
-                </div>
-              )}
-              {status === 'idle' && reviewStatus === 'idle' && (
-                <div className="status-list">
-                  <p className="muted">Upload a file to start the analysis.</p>
-                </div>
-              )}
-              <MaintainabilityPanel
-                status={reviewStatus}
-                score={score}
-                summary={summary}
-                smells={smells}
-                error={reviewError}
-              />
             </div>
           </section>
         )}
@@ -717,6 +675,8 @@ export default function DashboardPage() {
                   setSelectedFile(null);
                   setExp('');
                   setStatus('idle');
+                  setDocStatus('idle');
+                  setDocError('');
                   clearReview();
                 }}
               >
@@ -748,19 +708,45 @@ export default function DashboardPage() {
 
                 <div className="card code-viewer-card">
                   <CodeViewer
+                    key={selectedFile!.path}
                     filename={selectedFile!.name}
                     content={selectedFile!.content}
                     language={selectedFile!.language}
-                    onAnalyze={analyzeSelectedFile}
+                    onAnalyze={() => analyzeSelectedFile()}
                     analyzing={status === 'loading'}
                     onReview={reviewSelectedFile}
                     reviewing={reviewStatus === 'loading'}
+                    onDocument={documentSelectedFile}
+                    documenting={docStatus === 'loading'}
+                    onExplainFunction={analyzeSelectedFile}
+                    busy={aiBusy}
                   />
                 </div>
               </div>
 
               <div className="card output-card code-layout-right">
                 <h2>{status === 'success' ? 'AI Analysis' : 'Analysis'}</h2>
+
+                {docStatus === 'loading' && (
+                  <div className="loading-state">
+                    <div className="spinner" />
+                    <div>
+                      <p>Writing comments…</p>
+                      <span className="muted">Adding documentation to <strong>{selectedFile!.name}</strong>.</span>
+                    </div>
+                  </div>
+                )}
+
+                {docStatus === 'error' && docError && (
+                  <div className="error-banner" role="alert">{docError}</div>
+                )}
+
+                {docStatus === 'success' && (
+                  <div className="markdown">
+                    <p>Comments added to <strong>{selectedFile!.name}</strong> in the code viewer. Save to keep this version.</p>
+                    {saveActions('```' + selectedFile!.language + '\n' + selectedFile!.content + '\n```')}
+                  </div>
+                )}
 
                 {status === 'loading' && (
                   <div className="loading-state">
@@ -779,35 +765,17 @@ export default function DashboardPage() {
                 {status === 'success' && (
                   <div className="markdown">
                     <ReactMarkdown>{explanation}</ReactMarkdown>
-                    <div className="analysis-actions">
-                      <button
-                        className="btn btn-primary"
-                        type="button"
-                        onClick={saveAnalysis}
-                        disabled={saveState === 'saving' || saveState === 'saved'}
-                      >
-                        {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : 'Save analysis'}
-                      </button>
-                      <button className="btn btn-ghost" type="button" onClick={clearAnalysis}>
-                        Clear
-                      </button>
-                      {latestAnalysisId && (
-                        <Link className="btn btn-ghost" to={`/dashboard/repo/${latestAnalysisId}`}>
-                          View saved
-                        </Link>
-                      )}
-                    </div>
-                    {saveError && <div className="error-banner">{saveError}</div>}
+                    {saveActions(explanation)}
                   </div>
                 )}
 
-                {status === 'idle' && reviewStatus === 'idle' && (
+                {status === 'idle' && reviewStatus === 'idle' && docStatus === 'idle' && (
                   <div className="analysis-placeholder">
                     <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="3" />
                       <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
                     </svg>
-                    <p>Click <strong>"Analyze with AI"</strong> to get a detailed explanation of this file.</p>
+                    <p>Click <strong>"Analyze with AI"</strong> to get a detailed explanation of this file, pick a function to explain just that one, or click <strong>"Document"</strong> to add comments to the code.</p>
                   </div>
                 )}
                 <MaintainabilityPanel

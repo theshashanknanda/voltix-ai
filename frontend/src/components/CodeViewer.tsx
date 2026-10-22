@@ -1,4 +1,4 @@
-import { memo, useMemo, useDeferredValue } from 'react';
+import { memo, useMemo, useDeferredValue, useState } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -19,6 +19,24 @@ function detectLanguage(filename: string): string {
   return EXT_MAP[ext] || 'text';
 }
 
+// ponytail: regex line scan, not a parser. It misses e.g. TS class methods without a
+// modifier and multi-line signatures; users can type any name the scan misses.
+const FUNCTION_PATTERNS = [
+  /\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(/g,
+  /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*(?::[^=]+)?=>|[A-Za-z_$][\w$]*\s*=>)/g,
+  /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/gm,
+  /^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\(/gm,
+  /^\s*(?:(?:public|private|protected|static|final|abstract|synchronized)\s+)+(?:[\w<>[\],.?]+\s+)?([A-Za-z_]\w*)\s*\(/gm,
+];
+
+function findFunctionNames(content: string): string[] {
+  const names = new Set<string>();
+  for (const pattern of FUNCTION_PATTERNS) {
+    for (const match of content.matchAll(pattern)) names.add(match[1]);
+  }
+  return [...names];
+}
+
 /* ---------- props ---------- */
 interface Props {
   filename: string;
@@ -28,10 +46,19 @@ interface Props {
   analyzing?: boolean;
   onReview?: () => void;
   reviewing?: boolean;
+  onDocument?: () => void;
+  documenting?: boolean;
+  onExplainFunction?: (name: string) => void;
+  busy?: boolean;
 }
 
-const CodeViewer = memo(function CodeViewer({ filename, content, language, onAnalyze, analyzing, onReview, reviewing }: Props) {
+const CodeViewer = memo(function CodeViewer({
+  filename, content, language, onAnalyze, analyzing, onReview, reviewing,
+  onDocument, documenting, onExplainFunction, busy,
+}: Props) {
   const lang = useMemo(() => language || detectLanguage(filename), [filename, language]);
+  const functionNames = useMemo(() => (onExplainFunction ? findFunctionNames(content) : []), [content, onExplainFunction]);
+  const [functionName, setFunctionName] = useState('');
   const deferredContent = useDeferredValue(content);
   const isStale = deferredContent !== content;
   
@@ -51,14 +78,32 @@ const CodeViewer = memo(function CodeViewer({ filename, content, language, onAna
           <span className="code-viewer-lang-badge">{lang}</span>
         </div>
 
-        {(onAnalyze || onReview) && (
+        {(onAnalyze || onReview || onDocument) && (
           <div className="code-viewer-actions">
+            {onDocument && (
+              <button
+                id="document-btn"
+                className="btn btn-analyze"
+                type="button"
+                disabled={isEmpty || busy}
+                onClick={onDocument}
+              >
+                {documenting ? (
+                  <>
+                    <span className="spinner-sm" />
+                    Documenting…
+                  </>
+                ) : (
+                  'Document'
+                )}
+              </button>
+            )}
             {onReview && (
               <button
                 id="maintainability-btn"
                 className="btn btn-analyze"
                 type="button"
-                disabled={isEmpty || reviewing}
+                disabled={isEmpty || reviewing || busy}
                 onClick={onReview}
               >
                 {reviewing ? (
@@ -76,7 +121,7 @@ const CodeViewer = memo(function CodeViewer({ filename, content, language, onAna
                 id="analyze-ai-btn"
                 className="btn btn-analyze"
                 type="button"
-                disabled={isEmpty || analyzing}
+                disabled={isEmpty || analyzing || busy}
                 onClick={onAnalyze}
               >
                 {analyzing ? (
@@ -98,6 +143,37 @@ const CodeViewer = memo(function CodeViewer({ filename, content, language, onAna
           </div>
         )}
       </div>
+
+      {onExplainFunction && !isEmpty && (
+        <form
+          className="code-viewer-function-bar"
+          onSubmit={e => {
+            e.preventDefault();
+            if (functionName.trim()) onExplainFunction(functionName.trim());
+          }}
+        >
+          <label htmlFor="function-name-input" className="muted">Function</label>
+          <input
+            id="function-name-input"
+            className="input"
+            list="function-name-options"
+            placeholder={functionNames.length ? 'Pick or type a function name' : 'Type a function name'}
+            value={functionName}
+            onChange={e => setFunctionName(e.target.value)}
+          />
+          <datalist id="function-name-options">
+            {functionNames.map(name => <option key={name} value={name} />)}
+          </datalist>
+          <button
+            id="explain-function-btn"
+            className="btn btn-analyze"
+            type="submit"
+            disabled={!functionName.trim() || busy}
+          >
+            Explain function
+          </button>
+        </form>
+      )}
 
       {/* code body */}
       <div className={`code-viewer-body ${isStale ? 'stale' : ''}`}>

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../auth/authContext';
 import { API_BASE_URL } from '../config';
+import CodeViewer from '../components/CodeViewer';
 
 type Analysis = {
   id: string;
@@ -24,6 +25,10 @@ type TreeNode = {
 };
 
 const isGithubUrl = (value: string) => /^https?:\/\/github\.com\//i.test(value);
+
+// ponytail: a saved documented file is recognised by its explanation being one whole
+// code fence (see Document in DashboardPage). Add a `kind` column if that ever becomes ambiguous.
+const savedSource = (explanation: string) => explanation.match(/^```([\w+-]*)\n([\s\S]*)\n```$/);
 
 const buildTree = (paths: string[]): TreeNode[] => {
   const root: TreeNode = { name: '', path: '', type: 'folder', children: [] };
@@ -177,6 +182,8 @@ export default function RepoAnalysisPage() {
     return null;
   }
 
+  const source = savedSource(analysis.explanation);
+
   return (
     <div className="page dashboard-page">
       <header className="nav">
@@ -216,9 +223,19 @@ export default function RepoAnalysisPage() {
 
           <div className="card output-card">
             <h2>Saved Analysis</h2>
-            <div className="markdown">
-              <ReactMarkdown>{analysis.explanation}</ReactMarkdown>
-            </div>
+            {source ? (
+              <div className="code-viewer-card">
+                <CodeViewer
+                  filename={analysis.repositoryUrl.split(/[:/]/).pop() || analysis.repositoryUrl}
+                  content={source[2]}
+                  language={source[1]}
+                />
+              </div>
+            ) : (
+              <div className="markdown">
+                <ReactMarkdown>{analysis.explanation}</ReactMarkdown>
+              </div>
+            )}
           </div>
         </section>
       </main>
