@@ -1095,6 +1095,12 @@ a {
 	background: var(--text);
 }
 
+.code-line-highlight {
+	display: block;
+	background: rgba(34, 197, 94, 0.1);
+	box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .code-viewer-body.stale {
 	opacity: 0.65;
 	transition: opacity 0.2s ease;

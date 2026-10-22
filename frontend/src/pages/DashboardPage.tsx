@@ -6,9 +6,11 @@ import { useAuth } from '../auth/authContext';
 import { API_BASE_URL } from '../config';
 import CodeViewer from '../components/CodeViewer';
 import FileTree from '../components/FileTree';
+import { findLocalImports } from '../localImports';
 
 const API_URL = `${API_BASE_URL}/api/explain`;
 const EXPLAIN_FUNCTION_URL = `${API_BASE_URL}/api/explain-function`;
+const EXPLAIN_CONTEXT_URL = `${API_BASE_URL}/api/explain-context`;
 const DOCUMENT_URL = `${API_BASE_URL}/api/document`;
 const REVIEW_URL = `${API_BASE_URL}/api/maintainability`;
 const IMPORT_URL = `${API_BASE_URL}/api/upload-repo`;
@@ -55,7 +57,11 @@ type Smell = {
   detail: string;
   why: string;
   bestPractice: string;
+  startLine: number;
+  endLine: number;
 };
+
+type LineRange = { start: number; end: number };
 
 function MaintainabilityPanel({
   status,
@@ -63,12 +69,16 @@ function MaintainabilityPanel({
   summary,
   smells,
   error,
+  highlight,
+  onSelect,
 }: {
   status: Status;
   score: number | null;
   summary: string;
   smells: Smell[];
   error: string;
+  highlight: LineRange | null;
+  onSelect: (range: LineRange) => void;
 }) {
   if (status === 'idle') return null;
   return (
@@ -93,6 +103,14 @@ function MaintainabilityPanel({
                     <div className="finding-heading">
                       <span className={`severity severity-${smell.severity}`}>{smell.severity}</span>
                       <p className="finding-title">{smell.title}</p>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        type="button"
+                        aria-pressed={highlight?.start === smell.startLine && highlight?.end === smell.endLine}
+                        onClick={() => onSelect({ start: smell.startLine, end: smell.endLine })}
+                      >
+                        {smell.startLine === smell.endLine ? `Line ${smell.startLine}` : `Lines ${smell.startLine}-${smell.endLine}`}
+                      </button>
                     </div>
                     <p className="finding-category">{smell.category}</p>
                     <div className="finding-detail markdown"><ReactMarkdown>{smell.detail}</ReactMarkdown></div>
@@ -147,12 +165,17 @@ export default function DashboardPage() {
   const [smells, setSmells] = useState<Smell[]>([]);
   const [reviewError, setReviewError] = useState('');
   const reviewRequestId = useRef(0);
+  const explainRequestId = useRef(0);
+  const [highlight, setHighlight] = useState<LineRange | null>(null);
   const [docStatus, setDocStatus] = useState<Status>('idle');
   const [docError, setDocError] = useState('');
 
   // A response for a previous file (or an unmounted dashboard) must not appear
   // beside the current file. Opening finding details itself makes no requests.
-  useEffect(() => () => { reviewRequestId.current += 1; }, []);
+  useEffect(() => () => {
+    reviewRequestId.current += 1;
+    explainRequestId.current += 1;
+  }, []);
 
   const clearReview = useCallback(() => {
     reviewRequestId.current += 1;
@@ -161,6 +184,7 @@ export default function DashboardPage() {
     setSummary('');
     setSmells([]);
     setReviewError('');
+    setHighlight(null);
   }, []);
 
   useEffect(() => {
@@ -262,8 +286,9 @@ export default function DashboardPage() {
     clearReview();
   };
 
-  const analyzeSelectedFile = async (functionName?: string) => {
+  const explainSelectedFile = async (url: string, extra?: Record<string, unknown>) => {
     if (!selectedFile || !token) return;
+    const requestId = ++explainRequestId.current;
     setStatus('loading');
     setExp('');
     setError('');
@@ -274,7 +299,7 @@ export default function DashboardPage() {
     setDocError('');
 
     try {
-      const res = await fetch(functionName ? EXPLAIN_FUNCTION_URL : API_URL, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -284,17 +309,28 @@ export default function DashboardPage() {
           code: selectedFile.content,
           filename: selectedFile.name,
           language: selectedFile.language,
-          functionName,
+          ...extra,
         }),
       });
       const data = await res.json();
+      if (requestId !== explainRequestId.current) return;
       if (!res.ok) throw new Error(data.error || 'Unknown error');
       setExp(data.explanation);
       setStatus('success');
     } catch (err: unknown) {
+      if (requestId !== explainRequestId.current) return;
       setError(err instanceof Error ? err.message : 'Analysis failed');
       setStatus('error');
     }
+  };
+
+  const explainWithContext = () => {
+    if (!selectedFile) return;
+    const matched = findLocalImports(selectedFile, importedFiles);
+    explainSelectedFile(EXPLAIN_CONTEXT_URL, {
+      neighbors: matched.slice(0, 3).map(({ path, content }) => ({ path, content })),
+      omittedPaths: matched.slice(3).map(f => f.path),
+    });
   };
 
   const readReview = async (res: Response, requestId: number) => {
@@ -322,6 +358,7 @@ export default function DashboardPage() {
     setScore(null);
     setSummary('');
     setSmells([]);
+    setHighlight(null);
     try {
       const res = await fetch(REVIEW_URL, {
         method: 'POST',
@@ -380,6 +417,7 @@ export default function DashboardPage() {
   };
 
   const handleFileSelect = useCallback((f: ImportedFile) => {
+    explainRequestId.current += 1;
     setSelectedFile(f);
     setExp('');
     setStatus('idle');
@@ -672,6 +710,7 @@ export default function DashboardPage() {
                 className="btn btn-ghost btn-sm"
                 type="button"
                 onClick={() => {
+                  explainRequestId.current += 1;
                   setSelectedFile(null);
                   setExp('');
                   setStatus('idle');
@@ -712,14 +751,16 @@ export default function DashboardPage() {
                     filename={selectedFile!.name}
                     content={selectedFile!.content}
                     language={selectedFile!.language}
-                    onAnalyze={() => analyzeSelectedFile()}
+                    onAnalyze={() => explainSelectedFile(API_URL)}
                     analyzing={status === 'loading'}
                     onReview={reviewSelectedFile}
                     reviewing={reviewStatus === 'loading'}
                     onDocument={documentSelectedFile}
                     documenting={docStatus === 'loading'}
-                    onExplainFunction={analyzeSelectedFile}
+                    onExplainFunction={functionName => explainSelectedFile(EXPLAIN_FUNCTION_URL, { functionName })}
+                    onExplainContext={explainWithContext}
                     busy={aiBusy}
+                    highlight={highlight}
                   />
                 </div>
               </div>
@@ -784,6 +825,8 @@ export default function DashboardPage() {
                   summary={summary}
                   smells={smells}
                   error={reviewError}
+                  highlight={highlight}
+                  onSelect={setHighlight}
                 />
               </div>
             </section>

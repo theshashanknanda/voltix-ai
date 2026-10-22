@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../database/prismaClient';
 import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
+import { isSecretPath } from '../secrets';
 
 const router = Router();
 
@@ -195,10 +196,12 @@ router.get('/analyses/:id/files', requireAuth, async (req: AuthenticatedRequest,
       return;
     }
 
-    const files = (treeData.tree as Array<{ path: string; type: string }>).map((item) => ({
-      path: item.path,
-      type: item.type,
-    }));
+    const files = (treeData.tree as Array<{ path: string; type: string }>)
+      .filter((item) => !isSecretPath(item.path))
+      .map((item) => ({
+        path: item.path,
+        type: item.type,
+      }));
 
     res.json({ files });
   } catch (err: unknown) {

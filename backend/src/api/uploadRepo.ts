@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import { prisma } from '../database/prismaClient';
+import { isSecretPath } from '../secrets';
 
 const router = Router();
 
@@ -203,8 +204,10 @@ router.post('/upload-repo', async (req: Request, res: Response): Promise<void> =
 
     /* ---- Filter to supported files ---- */
     const treeItems = treeData.tree as Array<{ path: string; type: string }>;
-    const blobFiles = treeItems.filter(
-      (item) => item.type === 'blob' && isSupportedFile(item.path),
+    const blobs = treeItems.filter((item) => item.type === 'blob');
+    const skippedSecrets = blobs.filter((item) => isSecretPath(item.path)).length;
+    const blobFiles = blobs.filter(
+      (item) => !isSecretPath(item.path) && isSupportedFile(item.path),
     );
 
     const totalMatchingFiles = blobFiles.length;
@@ -283,6 +286,11 @@ router.post('/upload-repo', async (req: Request, res: Response): Promise<void> =
     });
 
     /* ---- Respond ---- */
+    const warnings = [
+      truncated && `Repository contains ${totalMatchingFiles} supported files. Only the first ${MAX_FILES} files were imported.`,
+      skippedSecrets > 0 && `Skipped ${skippedSecrets} secret file(s) (.env or private keys).`,
+    ].filter(Boolean);
+
     res.json({
       analysisId: saved.id,
       files,
@@ -293,9 +301,8 @@ router.post('/upload-repo', async (req: Request, res: Response): Promise<void> =
         totalFiles: totalMatchingFiles,
         returnedFiles: files.length,
         truncated,
-        ...(truncated && {
-          warning: `Repository contains ${totalMatchingFiles} supported files. Only the first ${MAX_FILES} files were imported.`,
-        }),
+        skippedSecrets,
+        ...(warnings.length > 0 && { warning: warnings.join(' ') }),
       },
     });
   } catch (err: unknown) {

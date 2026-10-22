@@ -1,4 +1,4 @@
-import { memo, useMemo, useDeferredValue, useState } from 'react';
+import { memo, useEffect, useMemo, useDeferredValue, useRef, useState } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -49,12 +49,14 @@ interface Props {
   onDocument?: () => void;
   documenting?: boolean;
   onExplainFunction?: (name: string) => void;
+  onExplainContext?: () => void;
   busy?: boolean;
+  highlight?: { start: number; end: number } | null;
 }
 
 const CodeViewer = memo(function CodeViewer({
   filename, content, language, onAnalyze, analyzing, onReview, reviewing,
-  onDocument, documenting, onExplainFunction, busy,
+  onDocument, documenting, onExplainFunction, onExplainContext, busy, highlight,
 }: Props) {
   const lang = useMemo(() => language || detectLanguage(filename), [filename, language]);
   const functionNames = useMemo(() => (onExplainFunction ? findFunctionNames(content) : []), [content, onExplainFunction]);
@@ -64,6 +66,11 @@ const CodeViewer = memo(function CodeViewer({
   
   const isEmpty = !content.trim();
   const isLargeFile = content.length > 30000;
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (highlight && !isStale) bodyRef.current?.querySelector('.code-line-highlight')?.scrollIntoView({ block: 'center' });
+  }, [highlight, isStale]);
 
   return (
     <div className="code-viewer">
@@ -78,8 +85,19 @@ const CodeViewer = memo(function CodeViewer({
           <span className="code-viewer-lang-badge">{lang}</span>
         </div>
 
-        {(onAnalyze || onReview || onDocument) && (
+        {(onAnalyze || onReview || onDocument || onExplainContext) && (
           <div className="code-viewer-actions">
+            {onExplainContext && (
+              <button
+                id="explain-context-btn"
+                className="btn btn-analyze"
+                type="button"
+                disabled={isEmpty || busy}
+                onClick={onExplainContext}
+              >
+                Explain with context
+              </button>
+            )}
             {onDocument && (
               <button
                 id="document-btn"
@@ -176,7 +194,7 @@ const CodeViewer = memo(function CodeViewer({
       )}
 
       {/* code body */}
-      <div className={`code-viewer-body ${isStale ? 'stale' : ''}`}>
+      <div ref={bodyRef} className={`code-viewer-body ${isStale ? 'stale' : ''}`}>
         {isEmpty ? (
           <div className="code-viewer-empty">
             <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -196,6 +214,10 @@ const CodeViewer = memo(function CodeViewer({
             style={oneDark}
             showLineNumbers={!isLargeFile}
             wrapLongLines={!isLargeFile}
+            wrapLines={!isLargeFile || !!highlight}
+            lineProps={n => ({
+              className: highlight && n >= highlight.start && n <= highlight.end ? 'code-line-highlight' : undefined,
+            })}
             customStyle={{
               margin: 0,
               borderRadius: 0,
