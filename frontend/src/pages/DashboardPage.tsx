@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DragEvent, ChangeEvent } from 'react';
-import ReactMarkdown from 'react-markdown';
+import Markdown from '../components/Markdown';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/authContext';
 import { API_BASE_URL } from '../config';
@@ -14,13 +14,14 @@ const EXPLAIN_CONTEXT_URL = `${API_BASE_URL}/api/explain-context`;
 const DOCUMENT_URL = `${API_BASE_URL}/api/document`;
 const REVIEW_URL = `${API_BASE_URL}/api/maintainability`;
 const IMPORT_URL = `${API_BASE_URL}/api/upload-repo`;
+const ZIP_IMPORT_URL = `${API_BASE_URL}/api/upload-zip`;
 // Labels match the backend's SOURCE_LANGUAGES.
 const UPLOAD_LANGUAGES: Record<string, string> = {
   '.js': 'javascript', '.ts': 'typescript', '.tsx': 'tsx', '.jsx': 'jsx',
   '.py': 'python', '.java': 'java', '.go': 'go',
 };
 const UPLOAD_EXTENSIONS = Object.keys(UPLOAD_LANGUAGES);
-const UPLOAD_ACCEPT = UPLOAD_EXTENSIONS.join(',');
+const UPLOAD_ACCEPT = [...UPLOAD_EXTENSIONS, '.zip'].join(',');
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
 type ImportStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -32,15 +33,19 @@ type ImportedFile = {
   language: string;
 };
 
+// GitHub imports set owner/repo/branch; ZIP imports set name instead.
 type ImportMeta = {
-  owner: string;
-  repo: string;
-  branch: string;
+  owner?: string;
+  repo?: string;
+  branch?: string;
+  name?: string;
   totalFiles: number;
   returnedFiles: number;
   truncated: boolean;
   warning?: string;
 };
+
+const importLabel = (meta: ImportMeta) => meta.name ?? `${meta.owner}/${meta.repo}`;
 
 type AnalysisSummary = {
   id: string;
@@ -113,16 +118,16 @@ function MaintainabilityPanel({
                       </button>
                     </div>
                     <p className="finding-category">{smell.category}</p>
-                    <div className="finding-detail markdown"><ReactMarkdown>{smell.detail}</ReactMarkdown></div>
+                    <div className="finding-detail markdown"><Markdown>{smell.detail}</Markdown></div>
                     <details className="finding-explanation">
                       <summary aria-label={`Dig deeper: ${smell.title}`}>Dig deeper</summary>
                       <div className="markdown finding-explanation-content">
                         <h4>What is wrong?</h4>
-                        <ReactMarkdown>{smell.detail}</ReactMarkdown>
+                        <Markdown>{smell.detail}</Markdown>
                         <h4>Why does it matter?</h4>
-                        <ReactMarkdown>{smell.why}</ReactMarkdown>
+                        <Markdown>{smell.why}</Markdown>
                         <h4>What should I do?</h4>
-                        <ReactMarkdown>{smell.bestPractice}</ReactMarkdown>
+                        <Markdown>{smell.bestPractice}</Markdown>
                       </div>
                     </details>
                   </div>
@@ -229,13 +234,7 @@ export default function DashboardPage() {
     }
   };
 
-  const importGithub = async () => {
-    const trimmed = githubUrl.trim();
-    if (!trimmed) {
-      setImportError('Please enter a GitHub repository URL.');
-      return;
-    }
-
+  const runImport = async (send: () => Promise<Response>, fallbackError: string) => {
     setImportStatus('loading');
     setImportError('');
     setImportWarning('');
@@ -245,15 +244,7 @@ export default function DashboardPage() {
     clearReview();
 
     try {
-      const res = await fetch(IMPORT_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ url: trimmed }),
-      });
-
+      const res = await send();
       const data = await res.json();
 
       if (!res.ok) {
@@ -268,9 +259,35 @@ export default function DashboardPage() {
         setImportWarning(data.meta.warning);
       }
     } catch (err: unknown) {
-      setImportError(err instanceof Error ? err.message : 'GitHub import failed.');
+      setImportError(err instanceof Error ? err.message : fallbackError);
       setImportStatus('error');
     }
+  };
+
+  const importGithub = () => {
+    const trimmed = githubUrl.trim();
+    if (!trimmed) {
+      setImportError('Please enter a GitHub repository URL.');
+      return;
+    }
+    return runImport(() => fetch(IMPORT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ url: trimmed }),
+    }), 'GitHub import failed.');
+  };
+
+  const importZip = (f: File) => {
+    const body = new FormData();
+    body.append('file', f);
+    return runImport(() => fetch(ZIP_IMPORT_URL, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body,
+    }), 'ZIP import failed.');
   };
 
   const clearImport = () => {
@@ -432,9 +449,13 @@ export default function DashboardPage() {
 
   const pick = async (f: File) => {
     clearReview();
+    if (f.name.toLowerCase().endsWith('.zip')) {
+      setError('');
+      return importZip(f);
+    }
     const ext = UPLOAD_EXTENSIONS.find((e) => f.name.toLowerCase().endsWith(e));
     if (!ext) {
-      setError(`Only ${UPLOAD_EXTENSIONS.join(', ')} files are accepted.`);
+      setError(`Only ${UPLOAD_EXTENSIONS.join(', ')} or .zip files are accepted.`);
       return;
     }
     const entry: ImportedFile = { path: f.name, name: f.name, content: await f.text(), language: UPLOAD_LANGUAGES[ext] };
@@ -468,7 +489,7 @@ export default function DashboardPage() {
     }
 
     const repositoryLabel = importMeta
-      ? `${importMeta.owner}/${importMeta.repo}:${selectedFile.path}`
+      ? `${importLabel(importMeta)}:${selectedFile.path}`
       : selectedFile.path;
 
     setSaveState('saving');
@@ -566,7 +587,7 @@ export default function DashboardPage() {
           <section className="workspace-grid simple">
             <div className="card upload-card">
               <h2>Upload a file</h2>
-              <p className="muted">Drop a source file ({UPLOAD_EXTENSIONS.join(', ')}) to get an explanation.</p>
+              <p className="muted">Drop a source file ({UPLOAD_EXTENSIONS.join(', ')}) to get an explanation, or a .zip of a project to browse it.</p>
               <div
                 className={`dropzone ${dragging ? 'active' : ''}`}
                 onClick={() => inputRef.current?.click()}
@@ -575,7 +596,7 @@ export default function DashboardPage() {
                 onDrop={onDrop}
               >
                 <div className="drop-icon" />
-                <p>Drop a source file here</p>
+                <p>Drop a source file or .zip here</p>
                 <span>or browse local files</span>
                 <input ref={inputRef} type="file" accept={UPLOAD_ACCEPT} onChange={onFileChange} />
               </div>
@@ -663,8 +684,8 @@ export default function DashboardPage() {
                   <div className="github-import-result">
                     <div className="github-result-header">
                       <div className="github-result-meta">
-                        <span className="accent">{importMeta?.owner}/{importMeta?.repo}</span>
-                        <span className="pill">{importMeta?.branch}</span>
+                        {importMeta && <span className="accent">{importLabel(importMeta)}</span>}
+                        {importMeta?.branch && <span className="pill">{importMeta.branch}</span>}
                         <span className="pill">{importedFiles.length} files</span>
                       </div>
                       <button className="btn btn-ghost btn-sm" type="button" onClick={clearImport}>Clear</button>
@@ -726,8 +747,8 @@ export default function DashboardPage() {
               </button>
               {importMeta && (
                 <div className="code-layout-meta">
-                  <span className="accent">{importMeta.owner}/{importMeta.repo}</span>
-                  <span className="pill">{importMeta.branch}</span>
+                  <span className="accent">{importLabel(importMeta)}</span>
+                  {importMeta.branch && <span className="pill">{importMeta.branch}</span>}
                 </div>
               )}
             </div>
@@ -805,7 +826,7 @@ export default function DashboardPage() {
 
                 {status === 'success' && (
                   <div className="markdown">
-                    <ReactMarkdown>{explanation}</ReactMarkdown>
+                    <Markdown>{explanation}</Markdown>
                     {saveActions(explanation)}
                   </div>
                 )}

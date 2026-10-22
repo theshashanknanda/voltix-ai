@@ -9,7 +9,7 @@ const router = Router();
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const MAX_FILES = 100;
+export const MAX_FILES = 100;
 
 const SUPPORTED_EXTENSIONS = new Set([
   '.js', '.ts', '.tsx', '.jsx', '.json', '.md', '.html', '.css',
@@ -51,12 +51,12 @@ const EXTENSION_TO_LANGUAGE: Record<string, string> = {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-const getLanguage = (filePath: string): string => {
+export const getLanguage = (filePath: string): string => {
   const ext = path.extname(filePath).toLowerCase();
   return EXTENSION_TO_LANGUAGE[ext] ?? 'text';
 };
 
-const isSupportedFile = (filePath: string): boolean => {
+export const isSupportedFile = (filePath: string): boolean => {
   const ext = path.extname(filePath).toLowerCase();
   const baseName = path.basename(filePath).toLowerCase();
   return SUPPORTED_EXTENSIONS.has(ext) || SUPPORTED_EXTENSIONS.has(`.${baseName}`);
