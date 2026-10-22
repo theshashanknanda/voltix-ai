@@ -1007,6 +1007,22 @@ a {
 	flex-shrink: 0;
 }
 
+.code-viewer-function-bar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 16px;
+	background: rgba(18, 26, 47, 0.75);
+	border-bottom: 1px solid var(--border);
+}
+
+.code-viewer-function-bar .input {
+	flex: 1;
+	min-width: 0;
+	padding: 6px 12px;
+	font-size: 0.82rem;
+}
+
 .code-viewer-lang-badge {
 	font-size: 0.68rem;
 	text-transform: uppercase;
