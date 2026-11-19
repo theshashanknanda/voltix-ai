@@ -77,6 +77,8 @@ it('shows authoritative Free limits and current usage', async () => {
   const response = await request(app).get('/api/billing').set(authHeader());
   expect(response.status).toBe(200);
   expect(response.body).toMatchObject({ plan: 'FREE', limits: { chatMessages: 20, savedProjects: 1 }, remaining: { chatMessages: 20 } });
+  expect(response.body.stripeMode).toBe('test');
+  expect(JSON.stringify(response.body)).not.toContain(process.env.STRIPE_SECRET_KEY);
 });
 it('starts subscription checkout without changing the account plan', async () => {
   const response = await request(app).post('/api/billing/checkout').set(authHeader()).send({ userId: 'attacker', priceId: 'price_other' });
@@ -93,6 +95,26 @@ it('reuses an open checkout instead of creating another subscription', async () 
   mockUser.stripeCheckoutSessionId = 'cs_open';
   checkoutRetrieve.mockResolvedValue({ status: 'open', url: 'https://checkout.stripe.com/existing' } as never);
   expect((await request(app).post('/api/billing/checkout').set(authHeader())).body.url).toContain('existing');
+  expect(checkout).not.toHaveBeenCalled();
+});
+it('replaces an expired checkout with a new idempotency key and stays Free', async () => {
+  mockUser.stripeCheckoutSessionId = 'cs_expired';
+  checkoutRetrieve.mockResolvedValue({ status: 'expired' } as never);
+  const response = await request(app).post('/api/billing/checkout').set(authHeader());
+  expect(response.status).toBe(200);
+  expect(checkout).toHaveBeenCalledWith(expect.anything(), { idempotencyKey: 'voltix-checkout-test-user-cs_expired' });
+  expect(mockUser.plan).toBe('FREE');
+});
+it('waits for the webhook after a completed checkout instead of selling another subscription', async () => {
+  mockUser.stripeCheckoutSessionId = 'cs_complete';
+  checkoutRetrieve.mockResolvedValue({ status: 'complete' } as never);
+  expect((await request(app).post('/api/billing/checkout').set(authHeader())).status).toBe(409);
+  expect(checkout).not.toHaveBeenCalled();
+  expect(mockUser.plan).toBe('FREE');
+});
+it('does not sell Pro again to an existing Pro user', async () => {
+  mockUser.plan = 'PRO';
+  expect((await request(app).post('/api/billing/checkout').set(authHeader())).status).toBe(409);
   expect(checkout).not.toHaveBeenCalled();
 });
 it('does not start another subscription while the current one needs payment', async () => {
@@ -161,6 +183,28 @@ it('does not grant Pro for an unrelated paid price', async () => {
   const other = subscription(); other.items.data[0].price.id = 'price_other';
   retrieve.mockResolvedValue(other as never);
   await postEvent(); expect(mockUser.plan).toBe('FREE');
+});
+it('rejects a subscription belonging to another customer and leaves the event retryable', async () => {
+  retrieve.mockResolvedValue({ ...subscription(), customer: 'cus_other' } as never);
+  expect((await postEvent()).status).toBe(500);
+  expect(mockUser.plan).toBe('FREE');
+  expect(mockUpdate).not.toHaveBeenCalled();
+  expect(mockEvents.size).toBe(0);
+});
+it('ignores a signed event for an unknown customer without looking up their subscription', async () => {
+  mockTx.user.findUnique.mockResolvedValueOnce(null as never);
+  expect((await postEvent()).status).toBe(200);
+  expect(retrieve).not.toHaveBeenCalled();
+  expect(mockUpdate).not.toHaveBeenCalled();
+});
+it('retains Pro until a scheduled cancellation actually ends the paid subscription', async () => {
+  Object.assign(mockUser, { plan: 'PRO', stripeSubscriptionId: 'sub_test' });
+  retrieve.mockResolvedValue({ ...subscription(), cancel_at_period_end: true } as never);
+  await postEvent('customer.subscription.updated');
+  expect(mockUser.plan).toBe('PRO');
+  retrieve.mockResolvedValue(subscription('canceled') as never);
+  await postEvent('customer.subscription.deleted', 'evt_ended');
+  expect(mockUser.plan).toBe('FREE');
 });
 it('retries failed processing instead of recording an unprocessed event', async () => {
   retrieve.mockRejectedValue(new Error('network failure'));

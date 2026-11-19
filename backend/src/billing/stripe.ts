@@ -1,6 +1,12 @@
 import Stripe from 'stripe';
 import { HttpError } from '../errors';
 
+export function stripeMode(key = process.env.STRIPE_SECRET_KEY): 'test' | 'live' | null {
+  if (/^(sk|rk)_test_/.test(key ?? '')) return 'test';
+  if (/^(sk|rk)_live_/.test(key ?? '')) return 'live';
+  return null;
+}
+
 export function stripeClient(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new HttpError(503, 'Billing is not available yet. Please try again later.');

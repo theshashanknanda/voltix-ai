@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../database/prismaClient';
 import { stripeClient, proPriceId } from './stripe';
 import { respondError } from '../errors';
+import { BILLING_WEBHOOK_EVENTS } from './events';
 
 const objectId = (value: string | { id: string } | null | undefined) => typeof value === 'string' ? value : value?.id;
 
@@ -19,11 +20,7 @@ function subscriptionFor(event: Stripe.Event): string | undefined {
   return undefined;
 }
 
-const HANDLED_EVENTS = new Set([
-  'checkout.session.completed', 'checkout.session.async_payment_succeeded',
-  'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted',
-  'invoice.paid', 'invoice.payment_failed',
-]);
+const HANDLED_EVENTS = new Set<string>(BILLING_WEBHOOK_EVENTS);
 
 export async function stripeWebhook(req: Request, res: Response): Promise<void> {
   const signature = req.headers['stripe-signature'];

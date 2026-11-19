@@ -8,6 +8,7 @@ type Billing = {
   plan: 'FREE' | 'PRO'; month: string; limits: Limits;
   usage: Limits; remaining: Limits; plans: Record<'FREE' | 'PRO', Limits>;
   checkoutAvailable: boolean; canManageBilling: boolean;
+  stripeMode: 'test' | 'live' | null;
 };
 
 export default function BillingPage() {
@@ -65,6 +66,7 @@ export default function BillingPage() {
     </header>
     <main className="container billing-page">
       <h1>Plans and billing</h1><p className="muted">Choose the plan that fits your project work.</p>
+      {billing?.stripeMode === 'test' && <p role="status">Test payments are enabled. No real money is charged.</p>}
       {checkout === 'canceled' && <p role="status">Checkout canceled. Your plan has not changed.</p>}
       {checkout === 'success' && billing?.plan !== 'PRO' && <p role="status">{waiting ? 'Confirming your payment...' : 'Payment confirmation may still be processing. Refresh to check your plan.'}</p>}
       {checkout === 'success' && billing?.plan === 'PRO' && <p role="status">Your Pro plan is active.</p>}

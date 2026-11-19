@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { prisma } from '../database/prismaClient';
 import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
 import { getBillingUsage, PLAN_LIMITS } from '../billing/quotas';
-import { stripeClient, proPriceId, frontendOrigin } from '../billing/stripe';
+import { stripeClient, proPriceId, frontendOrigin, stripeMode } from '../billing/stripe';
 import { HttpError, respondError } from '../errors';
 
 const router = Router();
 router.get('/billing', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    res.json({ ...await getBillingUsage(req.user!.id), plans: PLAN_LIMITS,
+    res.json({ ...await getBillingUsage(req.user!.id), plans: PLAN_LIMITS, stripeMode: stripeMode(),
       checkoutAvailable: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRO_PRICE_ID && process.env.STRIPE_WEBHOOK_SECRET && process.env.FRONTEND_URL),
     });
   } catch (error) { respondError(res, error, 'Unable to load billing.'); }

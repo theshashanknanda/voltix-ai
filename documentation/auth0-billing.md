@@ -123,6 +123,9 @@ for compatibility; do not use the initially loaded token for long-lived sessions
 
 ## Local setup
 
+For the complete independent Stripe setup and acceptance procedure, including
+the read-only `npm run billing:check` command, see [stripe-setup.md](stripe-setup.md).
+
 1. Install backend and frontend dependencies with `npm ci` in each directory.
 2. Copy each `.env.example` to that directory's `.env` and fill in the values.
    Never place a Stripe secret, Auth0 client secret, or database URL in Vite env.
@@ -209,7 +212,8 @@ payloads. Outbound Stripe APIs and database operations use test doubles. Quota
 concurrency tests use serialized transaction doubles; deployment still needs
 verification against PostgreSQL and the actual Auth0 and Stripe test accounts.
 
-Current verification: 181 backend tests across 12 suites pass. Backend TypeScript
+Current verification: 198 backend tests across 13 suites pass, including Stripe
+setup checks and Checkout/subscription edge cases. Backend TypeScript
 and Prisma validation pass; frontend production build and lint pass. The existing
 syntax-highlighting bundle size warning remains. Browser checks with the real
 frontend and an isolated Auth0/API fixture verified Free/Pro limits, a canceled

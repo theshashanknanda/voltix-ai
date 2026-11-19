@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "DOTENV_CONFIG_PATH=./.env tsx watch src/index.tsx",
     "test": "jest",
+    "billing:check": "node --import tsx src/scripts/checkBilling.ts",
     "postinstall": "prisma generate"
   },
   "keywords": [],
