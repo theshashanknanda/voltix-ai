@@ -625,6 +625,10 @@ export default function DashboardPage() {
       setSelectedFile(project.files[0]);
     }
   };
+  const applySavedFile = (path: string, content: string) => {
+    setImportedFiles(current => current.map(file => file.path === path ? { ...file, content } : file));
+    setSelectedFile(current => current?.path === path ? { ...current, content } : current);
+  };
   openProjectRef.current = openProject;
 
   useEffect(() => {
@@ -1043,6 +1047,7 @@ export default function DashboardPage() {
                   files={importedFiles}
                   selectedFile={selectedFile}
                   apiFetch={apiFetch}
+                  onFileApplied={applySavedFile}
                 />
               )}
             </section>

@@ -1752,6 +1752,20 @@ body.file-tree-resizing .file-tree-resize-handle {
 
 .chat-form { display: flex; gap: 8px; align-items: flex-end; }
 .chat-form .input { flex: 1; resize: vertical; min-width: 0; }
+.chat-suggestion { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.chat-suggestion pre {
+	margin: 0;
+	max-height: 240px;
+	overflow: auto;
+	padding: 10px;
+	border-radius: 8px;
+	background: #0d1117;
+	color: var(--text);
+	font-family: 'JetBrains Mono', ui-monospace, monospace;
+	font-size: 0.78rem;
+	white-space: pre-wrap;
+}
+.chat-suggestion-actions { display: flex; gap: 8px; }
 
 .billing-page { display: grid; gap: 20px; align-content: start; padding-bottom: 40px; }
 .billing-page :is(h1, h2, p) { margin: 0; }

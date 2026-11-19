@@ -8,7 +8,7 @@ import { containsSecret, SECRET_MESSAGE } from '../secrets';
 const router = Router();
 
 // Labels match uploadRepo.ts for the source extensions this endpoint accepts.
-const SOURCE_LANGUAGES: Record<string, string> = {
+export const SOURCE_LANGUAGES: Record<string, string> = {
   '.js': 'javascript',
   '.ts': 'typescript',
   '.tsx': 'tsx',
@@ -18,9 +18,11 @@ const SOURCE_LANGUAGES: Record<string, string> = {
   '.go': 'go',
 };
 
+export const EDITS_ONLY_MESSAGE = 'Edits are only available for .js, .ts, .tsx, .jsx, .py, .java, and .go.';
+
 const ALLOWED_EXTENSIONS = Object.keys(SOURCE_LANGUAGES).join(', ');
 
-function languageForFilename(filename: string): string | undefined {
+export function languageForFilename(filename: string): string | undefined {
   return SOURCE_LANGUAGES[path.extname(filename).toLowerCase()];
 }
 
