@@ -70,10 +70,9 @@ Voltix AI aims to:
 
 The app now includes a React/Vite frontend and an Express/Prisma/PostgreSQL backend.
 Implemented features include GitHub/ZIP imports, code browsing, AI explanations,
-documentation generation, maintainability reviews, and saved analyses. Auth0
-sign-in and Stripe billing setup are documented in
-[Authentication and billing](documentation/auth0-billing.md), including the
-integration contracts for the open saved-project, chat, and edit issues.
+documentation generation, maintainability reviews, and saved analyses.
+Sign-in uses email/password JWT auth; Stripe billing notes remain in
+[Authentication and billing](documentation/auth0-billing.md).
 
 - All system functionality is captured as **user stories** in GitHub Issues
 - User stories are grouped under **epics**
