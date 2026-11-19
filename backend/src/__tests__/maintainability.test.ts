@@ -1,3 +1,4 @@
+import { authHeader } from '../testSupport/auth0';
 import request from 'supertest';
 import express from 'express';
 import jwt from 'jsonwebtoken';
@@ -21,12 +22,7 @@ const app = express();
 app.use(express.json());
 app.use('/api', maintainabilityRouter);
 
-const authHeader = () => {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error('JWT_SECRET is not set');
-  const token = jwt.sign({ sub: 'test-user', email: 'test@example.com' }, secret);
-  return { Authorization: `Bearer ${token}` };
-};
+
 
 describe('POST /api/maintainability', () => {
   beforeEach(() => {

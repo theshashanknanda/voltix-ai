@@ -68,7 +68,9 @@ Voltix AI aims to:
 
 ## 🏗️ Repository Structure
 
-This repository currently focuses on **requirements analysis and Agile planning**.
+The application includes a React/Vite frontend and an Express/Prisma/PostgreSQL backend.
+Auth0 social sign-in setup, migration notes, and verification are documented in
+[Authentication](documentation/auth0.md).
 
 - All system functionality is captured as **user stories** in GitHub Issues
 - User stories are grouped under **epics**
@@ -78,7 +80,8 @@ This repository currently focuses on **requirements analysis and Agile planning*
   - Acceptance Criteria
   - Testing Scenarios
 
-Implementation will be developed in later phases.
+Run `npm ci` and `npm run dev` separately in `backend` and `frontend` after
+configuring their environment files and applying the database migrations.
 
 ---
 

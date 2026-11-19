@@ -1,3 +1,4 @@
+import { authHeader } from '../testSupport/auth0';
 import request from 'supertest';
 import express from 'express';
 import jwt from 'jsonwebtoken';
@@ -10,12 +11,7 @@ import uploadZipRouter from '../api/uploadZip';
 const app = express();
 app.use('/api', uploadZipRouter);
 
-const authHeader = () => {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error('JWT_SECRET is not set');
-  const token = jwt.sign({ sub: 'test-user', email: 'test@example.com' }, secret);
-  return { Authorization: `Bearer ${token}` };
-};
+
 
 const zip = (files: Record<string, string | Uint8Array>) => Buffer.from(zipSync(
   Object.fromEntries(Object.entries(files).map(([name, body]) => [name, typeof body === 'string' ? strToU8(body) : body])),

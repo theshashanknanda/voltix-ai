@@ -92,7 +92,7 @@ const TreeView = ({ nodes }: { nodes: TreeNode[] }) => {
 
 export default function RepoAnalysisPage() {
   const { id } = useParams();
-  const { token, logout, email } = useAuth();
+  const { token, logout, email, apiFetch } = useAuth();
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,7 +105,7 @@ export default function RepoAnalysisPage() {
       setLoading(true);
       setError('');
       try {
-        const res = await fetch(`${API_BASE_URL}/api/analyses/${id}`, {
+        const res = await apiFetch(`${API_BASE_URL}/api/analyses/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -119,7 +119,7 @@ export default function RepoAnalysisPage() {
     };
 
     fetchAnalysis();
-  }, [id, token]);
+  }, [id, token, apiFetch]);
 
   useEffect(() => {
     const fetchFiles = async () => {
@@ -129,7 +129,7 @@ export default function RepoAnalysisPage() {
 
       setFilesError('');
       try {
-        const res = await fetch(`${API_BASE_URL}/api/analyses/${analysis.id}/files`, {
+        const res = await apiFetch(`${API_BASE_URL}/api/analyses/${analysis.id}/files`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -141,7 +141,7 @@ export default function RepoAnalysisPage() {
     };
 
     fetchFiles();
-  }, [analysis, token]);
+  }, [analysis, token, apiFetch]);
 
   const tree = useMemo(() => buildTree(files.map((file) => file.path)), [files]);
 
