@@ -7,6 +7,7 @@ import NotFoundPage from './pages/NotFoundPage'
 import ProtectedRoute from './routes/ProtectedRoute'
 import PublicRoute from './routes/PublicRoute'
 import { AuthProvider } from './auth/AuthProvider'
+import BillingPage from './pages/BillingPage'
 
 function App() {
   return (
@@ -36,6 +37,10 @@ function App() {
                 <DashboardPage />
               </ProtectedRoute>
             }
+          />
+          <Route
+            path="/billing"
+            element={<ProtectedRoute><BillingPage /></ProtectedRoute>}
           />
           <Route
             path="/dashboard/repo/:id"

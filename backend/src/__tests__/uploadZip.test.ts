@@ -4,7 +4,14 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { strToU8, zipSync } from 'fflate';
 
-jest.mock('../database/prismaClient', () => ({ __esModule: true, prisma: {} }));
+const mockProjectCount = jest.fn().mockResolvedValue(0);
+const mockProjectCreate = jest.fn().mockResolvedValue({ id: 'zip-project-id' });
+const mockTx = {
+  $queryRaw: jest.fn(),
+  user: { findUnique: jest.fn().mockResolvedValue({ id: 'test-user', plan: 'FREE' }) },
+  project: { count: mockProjectCount, create: mockProjectCreate },
+};
+jest.mock('../database/prismaClient', () => ({ prisma: { $transaction: (work: (tx: unknown) => unknown) => work(mockTx) } }));
 
 import uploadZipRouter from '../api/uploadZip';
 
@@ -21,6 +28,13 @@ const upload = (body: Buffer, filename = 'project.zip') =>
   request(app).post('/api/upload-zip').set(authHeader()).attach('file', body, filename);
 
 describe('POST /api/upload-zip', () => {
+  beforeEach(() => { jest.clearAllMocks(); mockProjectCount.mockResolvedValue(0); });
+  it('rejects a second Free ZIP import without saving it', async () => {
+    mockProjectCount.mockResolvedValue(1);
+    const response = await upload(zip({ 'a.js': 'run()' }));
+    expect(response.status).toBe(402);
+    expect(mockProjectCreate).not.toHaveBeenCalled();
+  });
   it('returns both source files in the GitHub import shape, without the shared top folder', async () => {
     const response = await upload(zip({
       'project-main/src/index.ts': 'const a = 1;',
@@ -43,7 +57,15 @@ describe('POST /api/upload-zip', () => {
     expect(response.status).toBe(200);
     expect(response.body.files.map((f: { path: string }) => f.path)).toEqual(['a.js']);
     expect(response.body.meta.skippedSecrets).toBe(2);
-    expect(response.body.meta.warning).toBe('Skipped 2 secret file(s) (.env or private keys).');
+    expect(response.body.meta.warning).toBe('Skipped 2 secret file(s) (.env, private keys, or credential literals).');
+  });
+  it('does not persist files containing credential literals', async () => {
+    const response = await upload(zip({ 'config.js': 'const apiKey = "abcdefgh1234";', 'safe.js': 'run()' }));
+    expect(response.status).toBe(200);
+    expect(response.body.meta.skippedSecrets).toBe(1);
+    expect(mockProjectCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      files: [{ path: 'safe.js', name: 'safe.js', content: 'run()', language: 'javascript' }],
+    }) }));
   });
 
   it('returns 400 for a non-zip body, an empty upload, and no file', async () => {
