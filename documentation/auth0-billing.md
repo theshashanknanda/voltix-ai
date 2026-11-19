@@ -2,10 +2,11 @@
 
 ## Review and rollout order
 
-Auth0 is isolated on `feature/110-auth0-login`, based on the current `main`.
-Billing is on `feature/115-billing-foundation`, stacked on the Auth0 branch.
-Review Auth0 against `main` and billing against the Auth0 branch until #110 is
-merged. This keeps Stripe/project/chat integration work out of the Auth0 review.
+The initial Auth0 and billing implementations were merged into `main` in PRs
+#116 and #117. The production-configuration and session-restoration follow-up is
+on `feature/110-auth0-login`; review its remaining diff against `main`.
+See [auth0.md](auth0.md#production-rollout) for the exact production URLs,
+required hosting settings, and remaining provider setup.
 
 The migrations are separate: `20261119142000_auth0_login` owns identity changes;
 `20261119143000_billing_projects` adds plans, counters, Stripe identifiers/events,
@@ -13,9 +14,9 @@ and project snapshots. Apply both in order when deploying the billing branch.
 The Auth0 branch can deploy its identity migration independently of billing.
 
 Neither Auth0 setup nor Stripe test-mode configuration needs to wait for the
-other open issues. #110 is code-complete but live acceptance remains pending the
-tenant/provider setup, identity migration, and real Google/GitHub smoke checks
-described in [auth0.md](auth0.md). #115 remains partial until #113/#114 connect
+other open issues. #110 has passed live Google/GitHub sign-in, identity migration,
+account reuse, authenticated import, refresh, and logout checks. The final manual
+provider cancellation check remains pending; see [auth0.md](auth0.md). #115 remains partial until #113/#114 connect
 the quota helper and their chat/edit UI handles the returned 402 errors.
 
 Coordinate the `Project` model with the owner of #111 before merging its changes;
@@ -135,8 +136,9 @@ for compatibility; do not use the initially loaded token for long-lived sessions
    credentials and ensure the GitHub connection can retrieve the user's email.
 5. Allow `http://localhost:5173/auth` as a callback and logout URL, and
    `http://localhost:5173` as a web origin. Register equivalent deployment URLs.
-   Auth0 handles SDK session restoration; Voltix removes the old localStorage
-   token keys and does not store its own bearer token persistently.
+   Auth0 handles SDK session restoration using its localStorage cache so page
+   refresh works when silent iframe login is blocked. Logout clears this cache.
+   Voltix removes its legacy token keys; see the storage tradeoffs in [auth0.md](auth0.md).
 6. In Stripe test mode, create a recurring Pro price and set its `price_...` ID
    as `STRIPE_PRO_PRICE_ID`. Price/currency are configured in Stripe, not guessed
    by this implementation. Enable the customer portal to support payment-method

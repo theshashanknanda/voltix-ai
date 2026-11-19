@@ -20,6 +20,7 @@ interface TreeItem {
   type: 'file' | 'folder';
   children: Record<string, TreeItem>;
   fileData?: ImportedFile;
+  //this
 }
 
 const SelectionContext = createContext<{
