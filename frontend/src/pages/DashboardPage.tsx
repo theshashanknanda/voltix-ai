@@ -142,7 +142,7 @@ function MaintainabilityPanel({
 }
 
 export default function DashboardPage() {
-  const { email, logout, token } = useAuth();
+  const { email, logout, token, apiFetch } = useAuth();
   const [explanation, setExp] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [errorMsg, setError] = useState('');
@@ -199,7 +199,7 @@ export default function DashboardPage() {
       setAnalysesError('');
       setDeleteError('');
       try {
-        const res = await fetch(`${API_BASE_URL}/api/analyses`, {
+        const res = await apiFetch(`${API_BASE_URL}/api/analyses`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -213,14 +213,14 @@ export default function DashboardPage() {
     };
 
     fetchAnalyses();
-  }, [token]);
+  }, [token, apiFetch]);
 
   const deleteAnalysis = async (analysisId: string) => {
     if (!token) return;
     setDeletingId(analysisId);
     setDeleteError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/analyses/${analysisId}`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/analyses/${analysisId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -270,7 +270,7 @@ export default function DashboardPage() {
       setImportError('Please enter a GitHub repository URL.');
       return;
     }
-    return runImport(() => fetch(IMPORT_URL, {
+    return runImport(() => apiFetch(IMPORT_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -283,7 +283,7 @@ export default function DashboardPage() {
   const importZip = (f: File) => {
     const body = new FormData();
     body.append('file', f);
-    return runImport(() => fetch(ZIP_IMPORT_URL, {
+    return runImport(() => apiFetch(ZIP_IMPORT_URL, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body,
@@ -316,7 +316,7 @@ export default function DashboardPage() {
     setDocError('');
 
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -377,7 +377,7 @@ export default function DashboardPage() {
     setSmells([]);
     setHighlight(null);
     try {
-      const res = await fetch(REVIEW_URL, {
+      const res = await apiFetch(REVIEW_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -403,7 +403,7 @@ export default function DashboardPage() {
     setDocStatus('loading');
     setDocError('');
     try {
-      const res = await fetch(DOCUMENT_URL, {
+      const res = await apiFetch(DOCUMENT_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -495,7 +495,7 @@ export default function DashboardPage() {
     setSaveState('saving');
     setSaveError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/analyses`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/analyses`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -514,7 +514,7 @@ export default function DashboardPage() {
       }
       setSaveState('saved');
 
-      const refreshed = await fetch(`${API_BASE_URL}/api/analyses`, {
+      const refreshed = await apiFetch(`${API_BASE_URL}/api/analyses`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const refreshedData = await refreshed.json();

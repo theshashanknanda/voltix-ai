@@ -13,17 +13,18 @@ datasource db {
 }
 
 // ──────────────────────────────────────────
-// USER — stub only. Full model owned by auth teammate.
-// They will add: password_hash, createdAt, sessions, etc.
+// USER: Auth0 subject maps to a stable internal user UUID.
 // ──────────────────────────────────────────
 model User {
   id           String     @id @default(uuid())
-  email        String     @unique
+  email        String
   name         String?
-  passwordHash String
+  passwordHash String?
+  auth0UserId   String?    @unique
   createdAt    DateTime   @default(now())
   analyses     Analysis[]
 
+  @@index([email])
   @@map("users")
 }
 

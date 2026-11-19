@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
+import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
 import path from 'path';
 import { prisma } from '../database/prismaClient';
 import { isSecretPath } from '../secrets';
@@ -107,7 +108,7 @@ const encodeGithubPath = (filePath: string): string => {
 /*  Route                                                              */
 /* ------------------------------------------------------------------ */
 
-router.post('/upload-repo', async (req: Request, res: Response): Promise<void> => {
+router.post('/upload-repo', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   // Accept both { url } and { repoUrl } for flexibility
   const rawBody = req.body as { url?: string; repoUrl?: string };
   const url = rawBody.url || rawBody.repoUrl;
@@ -281,7 +282,7 @@ router.post('/upload-repo', async (req: Request, res: Response): Promise<void> =
       data: {
         repositoryUrl: url,
         explanation: `Imported ${files.length} file(s) from ${owner}/${repo}`,
-        userId: (req as any).user?.id || null,
+        userId: req.user!.id,
       },
     });
 
