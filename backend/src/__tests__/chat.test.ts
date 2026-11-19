@@ -66,9 +66,27 @@ describe('POST /api/chat', () => {
     expect(response.body.answer).toContain('src/a.js');
     expect(response.body.answer).toContain('src/b.js');
     expect(promptText()).toContain('export function add');
+    expect(mockFind).toHaveBeenCalledWith(expect.objectContaining({
+      include: { files: expect.objectContaining({ select: expect.objectContaining({ path: true, content: true }) }) },
+    }));
     expect(mockProjectUpdate).toHaveBeenCalledTimes(1);
     expect(mockProjectUpdate.mock.calls[0][0].data.files).toBeUndefined();
     expect(mockProjectUpdate.mock.calls[0][0].data.chat).toHaveLength(2);
+  });
+
+  it('includes the open file from ProjectFile rows after #111', async () => {
+    mockFind.mockResolvedValue(project);
+    reply('AuthPage renders the login form.');
+    const response = await send({
+      projectId: 'project-1',
+      message: 'what does this file do',
+      openPath: 'src/a.js',
+      neighborPaths: ['src/b.js'],
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.paths[0]).toBe('src/a.js');
+    expect(response.body.answer).not.toContain('No project file was included');
+    expect(promptText()).toContain('Open file: src/a.js');
   });
 
   it('lists a fourth file as left out and stops the left-out list at 50', async () => {
