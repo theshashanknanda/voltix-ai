@@ -284,30 +284,23 @@ router.post('/upload-repo', requireAuth, async (req: AuthenticatedRequest, res: 
     await Promise.all(Array.from({ length: concurrency }, () => worker()));
     files.sort((a, b) => a.path.localeCompare(b.path));
 
+    const warnings = [
+      truncated && `Repository contains ${totalMatchingFiles} supported files. Only the first ${MAX_FILES} files were imported.`,
+      skippedSecrets > 0 && `Skipped ${skippedSecrets} secret file(s) (.env, private keys, or credential literals).`,
+    ].filter(Boolean);
+
     /* ---- Save analysis record ---- */
     const meta = {
       owner, repo, branch: defaultBranch, totalFiles: totalMatchingFiles,
       returnedFiles: files.length, truncated, skippedSecrets,
+      ...(warnings.length > 0 && { warning: warnings.join(' ') }),
     };
     const saved = await saveImportedProject(req.user!.id, {
       source: 'github', label: `${owner}/${repo}`, files, metadata: meta, repositoryUrl: url,
     });
 
     /* ---- Respond ---- */
-    const warnings = [
-      truncated && `Repository contains ${totalMatchingFiles} supported files. Only the first ${MAX_FILES} files were imported.`,
-      skippedSecrets > 0 && `Skipped ${skippedSecrets} secret file(s) (.env, private keys, or credential literals).`,
-    ].filter(Boolean);
-
-    res.json({
-      analysisId: saved?.analysisId,
-      projectId: saved?.projectId,
-      files,
-      meta: {
-        ...meta,
-        ...(warnings.length > 0 && { warning: warnings.join(' ') }),
-      },
-    });
+    res.json({ analysisId: saved?.analysisId, projectId: saved?.projectId, files, meta });
   } catch (err: unknown) {
     respondError(res, err, 'Repository import failed. Please try again.');
   }

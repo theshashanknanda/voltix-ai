@@ -46,13 +46,28 @@ model Project {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   source    String
   label     String
-  files     Json
+  files     ProjectFile[]
+  analyses  Analysis[]
+  // Import stats, including truncated/skipped counts and the warning shown after import.
   metadata  Json
   chat      Json     @default("[]")
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
   @@map("projects")
+}
+
+model ProjectFile {
+  id        String  @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  path      String
+  name      String
+  content   String
+  language  String
+
+  @@index([projectId])
+  @@map("project_files")
 }
 
 model StripeEvent {
@@ -70,6 +85,9 @@ model Analysis {
 
   userId String?
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@map("analyses")
 }

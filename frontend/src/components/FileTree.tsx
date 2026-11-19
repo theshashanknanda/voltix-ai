@@ -29,7 +29,10 @@ const SelectionContext = createContext<{
   expandPaths: Set<string>;
 }>({ onFileSelect: () => {}, expandPaths: new Set() });
 
-/* ---------------- Component ---------------- */
+function fileExt(name: string) {
+  const i = name.lastIndexOf('.');
+  return i > 0 ? name.slice(i + 1).toLowerCase() : '';
+}
 
 const FileTree = memo(function FileTree({ files, selectedFilePath, onFileSelect }: FileTreeProps) {
   const treeData = useMemo(() => {
@@ -74,18 +77,14 @@ const FileTree = memo(function FileTree({ files, selectedFilePath, onFileSelect 
 
   useEffect(() => {
     if (!selectedFilePath) return;
-    document.querySelector('.tree-item.active')?.scrollIntoView({ block: 'nearest' });
+    document.querySelector('.file-tree-container .tree-item.active')?.scrollIntoView({ block: 'nearest' });
   }, [selectedFilePath, expandPaths]);
 
   return (
     <SelectionContext.Provider value={contextValue}>
-      <div className="file-tree-container">
+      <div className="file-tree-container" role="tree">
         {sortedNodes.map(item => (
-          <TreeNode
-            key={item.path}
-            item={item}
-            depth={0}
-          />
+          <TreeNode key={item.path} item={item} depth={0} />
         ))}
       </div>
     </SelectionContext.Provider>
@@ -93,8 +92,6 @@ const FileTree = memo(function FileTree({ files, selectedFilePath, onFileSelect 
 });
 
 export default FileTree;
-
-/* ---------------- Sub-component ---------------- */
 
 interface TreeNodeProps {
   item: TreeItem;
@@ -108,6 +105,7 @@ const TreeNode = memo(function TreeNode({ item, depth }: TreeNodeProps) {
   const isExpanded = forceOpen || userExpanded;
   const isSelected = item.type === 'file' && item.path === selectedFilePath;
   const hasChildren = Object.keys(item.children).length > 0;
+  const ext = item.type === 'file' ? fileExt(item.name) : '';
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -129,54 +127,48 @@ const TreeNode = memo(function TreeNode({ item, depth }: TreeNodeProps) {
   }, [item.children, hasChildren]);
 
   return (
-    <div className="tree-node">
+    <div className="tree-node" role="treeitem" aria-expanded={item.type === 'folder' ? isExpanded : undefined}>
       <div
-        className={`tree-item ${item.type} ${isSelected ? 'active' : ''}`}
-        style={{ paddingLeft: `${depth * 14 + 12}px` }}
+        className={`tree-item ${item.type}${isSelected ? ' active' : ''}${ext ? ` ext-${ext}` : ''}`}
+        style={{ paddingLeft: `${depth * 12 + 10}px` }}
         onClick={handleToggle}
+        title={item.path}
       >
-        <span className="tree-icon">
+        <span className="tree-icon" aria-hidden="true">
           {item.type === 'folder' ? (
-            <svg
-              className={`chevron ${isExpanded ? 'expanded' : ''}`}
-              viewBox="0 0 24 24"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
+            <>
+              <svg
+                className={`chevron ${isExpanded ? 'expanded' : ''}`}
+                viewBox="0 0 24 24"
+                width="10"
+                height="10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              <svg className="folder-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                {isExpanded ? (
+                  <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" opacity="0.9" />
+                ) : (
+                  <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                )}
+              </svg>
+            </>
           ) : (
-            <svg
-              viewBox="0 0 24 24"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
+            <span className="file-glyph">{ext.slice(0, 2) || '·'}</span>
           )}
         </span>
         <span className="tree-name">{item.name}</span>
       </div>
 
       {item.type === 'folder' && isExpanded && hasChildren && (
-        <div className="tree-children">
+        <div className="tree-children" role="group">
           {sortedChildren.map(child => (
-            <TreeNode
-              key={child.path}
-              item={child}
-              depth={depth + 1}
-            />
+            <TreeNode key={child.path} item={child} depth={depth + 1} />
           ))}
         </div>
       )}

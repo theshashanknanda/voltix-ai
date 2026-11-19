@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { PLAN_LIMITS, projectLimitError, withUserLock } from '../billing/quotas';
+import { limitsFor, projectLimitError, withUserLock } from '../billing/quotas';
 import { HttpError } from '../errors';
 
 export type ImportedFile = { path: string; name: string; content: string; language: string };
@@ -18,15 +18,15 @@ export async function saveImportedProject(userId: string, input: ImportedProject
   }
   return withUserLock(userId, async (tx, user) => {
     const count = await tx.project.count({ where: { userId } });
-    if (count >= PLAN_LIMITS[user.plan].savedProjects) throw projectLimitError(user.plan);
+    if (count >= limitsFor(user.plan).savedProjects) throw projectLimitError(user.plan);
     const project = await tx.project.create({ data: {
       userId, source: input.source, label: input.label,
-      files: input.files as unknown as Prisma.InputJsonValue,
+      files: { create: input.files },
       metadata: input.metadata,
     } });
     // Preserve the previous GitHub import response contract for existing clients.
     const analysis = input.repositoryUrl ? await tx.analysis.create({ data: {
-      userId, repositoryUrl: input.repositoryUrl,
+      userId, projectId: project.id, repositoryUrl: input.repositoryUrl,
       explanation: `Imported ${input.files.length} file(s) from ${input.label}`,
     } }) : null;
     return { projectId: project.id, analysisId: analysis?.id };

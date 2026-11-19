@@ -1,50 +1,14 @@
 import { Router, Response } from 'express';
 import { prisma } from '../database/prismaClient';
 import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
-import { isSecretPath } from '../secrets';
+import { projectFiles } from './projects';
 
 const router = Router();
 
 type CreateAnalysisBody = {
   repositoryUrl?: string;
   explanation?: string;
-};
-
-const getGithubHeaders = (): Record<string, string> => {
-  const headers: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
-  };
-  if (process.env.GITHUB_TOKEN) {
-    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-  }
-  return headers;
-};
-
-const parseGithubRepoUrl = (rawUrl: string): { owner: string; repo: string } => {
-  let url: URL;
-  try {
-    url = new URL(rawUrl.trim());
-  } catch (err) {
-    throw new Error('Invalid GitHub repository URL');
-  }
-
-  if (!['github.com', 'www.github.com'].includes(url.hostname.toLowerCase())) {
-    throw new Error('Only GitHub repository URLs are supported');
-  }
-
-  const segments = url.pathname.replace(/^\/+|\/+$/g, '').split('/');
-  if (segments.length < 2) {
-    throw new Error('GitHub repository URL must include owner and repository name');
-  }
-
-  const owner = segments[0];
-  const repo = segments[1].replace(/\.git$/i, '');
-
-  if (!owner || !repo) {
-    throw new Error('Invalid GitHub repository URL');
-  }
-
-  return { owner, repo };
+  projectId?: string;
 };
 
 router.get('/analyses', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -73,7 +37,7 @@ router.get('/analyses', requireAuth, async (req: AuthenticatedRequest, res: Resp
  * Creates a saved analysis for the current user.
  */
 router.post('/analyses', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const { repositoryUrl, explanation } = req.body as CreateAnalysisBody;
+  const { repositoryUrl, explanation, projectId } = req.body as CreateAnalysisBody;
 
   if (!repositoryUrl || !explanation) {
     res.status(400).json({ error: 'repositoryUrl and explanation are required.' });
@@ -81,11 +45,17 @@ router.post('/analyses', requireAuth, async (req: AuthenticatedRequest, res: Res
   }
 
   try {
+    // Linking another user's project would expose its files via /analyses/:id/files.
+    if (projectId && !(await prisma.project.findFirst({ where: { id: String(projectId), userId: req.user!.id }, select: { id: true } }))) {
+      res.status(404).json({ error: 'Project not found.' });
+      return;
+    }
     const saved = await prisma.analysis.create({
       data: {
         repositoryUrl,
         explanation,
         userId: req.user?.id || null,
+        projectId: projectId ? String(projectId) : null,
       },
     });
     res.status(201).json({ analysis: saved });
@@ -144,14 +114,14 @@ router.delete('/analyses/:id', requireAuth, async (req: AuthenticatedRequest, re
 
 /**
  * GET /api/analyses/:id/files
- * Returns the GitHub file tree for a saved analysis.
+ * Returns the files saved with the analysis's imported project. Never calls GitHub.
  */
 router.get('/analyses/:id/files', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   try {
     const analysis = await prisma.analysis.findFirst({
       where: { id: id as string, userId: req.user?.id },
-      select: { repositoryUrl: true },
+      select: { project: { select: { files: projectFiles } } },
     });
 
     if (!analysis) {
@@ -159,51 +129,7 @@ router.get('/analyses/:id/files', requireAuth, async (req: AuthenticatedRequest,
       return;
     }
 
-    let owner: string;
-    let repo: string;
-
-    try {
-      ({ owner, repo } = parseGithubRepoUrl(analysis.repositoryUrl));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Invalid repository URL';
-      res.status(400).json({ error: message });
-      return;
-    }
-
-    const headers = getGithubHeaders();
-    const repoResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
-    if (!repoResponse.ok) {
-      res.status(400).json({ error: 'GitHub repository not found or inaccessible.' });
-      return;
-    }
-
-    const repoData = await repoResponse.json();
-    const defaultBranch = typeof repoData.default_branch === 'string' ? repoData.default_branch : 'main';
-
-    const treeResponse = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(defaultBranch)}?recursive=1`,
-      { headers },
-    );
-
-    if (!treeResponse.ok) {
-      res.status(400).json({ error: 'Could not fetch repository file tree from GitHub.' });
-      return;
-    }
-
-    const treeData = await treeResponse.json();
-    if (!Array.isArray(treeData.tree)) {
-      res.status(400).json({ error: 'GitHub repository tree response was malformed.' });
-      return;
-    }
-
-    const files = (treeData.tree as Array<{ path: string; type: string }>)
-      .filter((item) => !isSecretPath(item.path))
-      .map((item) => ({
-        path: item.path,
-        type: item.type,
-      }));
-
-    res.json({ files });
+    res.json({ files: analysis.project?.files ?? [] });
   } catch (err: unknown) {
     console.error('[DB Error] GET /analyses/:id/files', err);
     const message = err instanceof Error ? err.message : 'Database error';

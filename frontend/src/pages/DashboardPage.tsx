@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { DragEvent, ChangeEvent, MouseEvent as ReactMouseEvent } from 'react';
 import Markdown from '../components/Markdown';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/authContext';
 import { API_BASE_URL } from '../config';
 import CodeViewer from '../components/CodeViewer';
@@ -575,6 +575,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           repositoryUrl: repositoryLabel,
           explanation: text,
+          projectId: savedProjectId,
         }),
       });
       const data = await res.json();
@@ -648,6 +649,25 @@ export default function DashboardPage() {
     })();
     return () => controller.abort();
   }, [token, apiFetch]);
+
+  // Saved analyses link here as /dashboard?project=<id> to reopen the stored files.
+  const [searchParams] = useSearchParams();
+  const linkedProject = searchParams.get('project');
+  const openLinkedProject = useEffectEvent(openProject);
+  useEffect(() => {
+    if (!linkedProject) return;
+    const controller = new AbortController();
+    void apiFetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(linkedProject)}`, { signal: controller.signal })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Unable to open project.');
+        openLinkedProject(data.project);
+      })
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted) setImportError(err instanceof Error ? err.message : 'Unable to open project.');
+      });
+    return () => controller.abort();
+  }, [linkedProject, apiFetch]);
 
   const showCodeViewerLayout = importedFiles.length > 0;
   const aiBusy = status === 'loading' || reviewStatus === 'loading' || docStatus === 'loading';
@@ -869,7 +889,10 @@ export default function DashboardPage() {
                 style={{ ['--file-tree-width' as string]: `${treeWidth}px` }}
               >
                 <div className="file-tree-sidebar">
-                  <div className="file-tree-title">Files</div>
+                  <div className="file-tree-title">
+                    <span>Explorer</span>
+                    <span className="file-tree-count">{importedFiles.length}</span>
+                  </div>
                   <div className="file-tree-list">
                     <FileTree
                       files={importedFiles}

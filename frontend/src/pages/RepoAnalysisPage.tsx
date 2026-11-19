@@ -10,12 +10,10 @@ type Analysis = {
   repositoryUrl: string;
   explanation: string;
   createdAt: string;
+  projectId: string | null;
 };
 
-type FileEntry = {
-  path: string;
-  type: 'blob' | 'tree' | string;
-};
+type FileEntry = { path: string };
 
 type TreeNode = {
   name: string;
@@ -23,8 +21,6 @@ type TreeNode = {
   type: 'file' | 'folder';
   children?: TreeNode[];
 };
-
-const isGithubUrl = (value: string) => /^https?:\/\/github\.com\//i.test(value);
 
 // ponytail: a saved documented file is recognised by its explanation being one whole
 // code fence (see Document in DashboardPage). Add a `kind` column if that ever becomes ambiguous.
@@ -123,9 +119,7 @@ export default function RepoAnalysisPage() {
 
   useEffect(() => {
     const fetchFiles = async () => {
-      if (!analysis?.repositoryUrl || !isGithubUrl(analysis.repositoryUrl)) {
-        return;
-      }
+      if (!analysis?.projectId) return;
 
       setFilesError('');
       try {
@@ -211,13 +205,16 @@ export default function RepoAnalysisPage() {
             </div>
             <h3 className="section-title">File Tree</h3>
             {filesError && <div className="error-banner">{filesError}</div>}
-            {!filesError && !isGithubUrl(analysis.repositoryUrl) && (
-              <p className="muted">File tree is only available for GitHub repository imports.</p>
+            {!filesError && !analysis.projectId && (
+              <p className="muted">No saved project files for this analysis.</p>
             )}
-            {!filesError && isGithubUrl(analysis.repositoryUrl) && (
-              <div className="file-tree">
-                <TreeView nodes={tree} />
-              </div>
+            {!filesError && analysis.projectId && (
+              <>
+                <div className="file-tree">
+                  <TreeView nodes={tree} />
+                </div>
+                <Link className="btn btn-ghost" to={`/dashboard?project=${analysis.projectId}`}>Open project</Link>
+              </>
             )}
           </div>
 
