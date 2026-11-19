@@ -850,7 +850,10 @@ export default function DashboardPage() {
                 style={{ ['--file-tree-width' as string]: `${treeWidth}px` }}
               >
                 <div className="file-tree-sidebar">
-                  <div className="file-tree-title">Files</div>
+                  <div className="file-tree-title">
+                    <span>Explorer</span>
+                    <span className="file-tree-count">{importedFiles.length}</span>
+                  </div>
                   <div className="file-tree-list">
                     <FileTree
                       files={importedFiles}

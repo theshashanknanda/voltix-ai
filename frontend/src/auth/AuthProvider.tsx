@@ -78,11 +78,31 @@ function AuthSession({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+// ponytail: local-only bypass for UI work without Auth0. Remove once Auth0 is reliable in this env.
+const bypassAuth: AuthContextValue = {
+  token: 'bypass',
+  email: 'dev@localhost',
+  isAuthenticated: true,
+  isLoading: false,
+  error: '',
+  configured: true,
+  login: async () => ({ ok: true }),
+  logout: () => {},
+  apiFetch: async (input, init) => {
+    const headers = new Headers(init?.headers);
+    headers.set('Authorization', 'Bearer bypass');
+    return fetch(input, { ...init, headers });
+  },
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     localStorage.removeItem('voltix_token');
     localStorage.removeItem('voltix_email');
   }, []);
+  if (import.meta.env.VITE_AUTH_BYPASS === 'true') {
+    return <AuthContext.Provider value={bypassAuth}>{children}</AuthContext.Provider>;
+  }
   if (!domain || !clientId || !audience) {
     return <AuthContext.Provider value={{
       token: '', email: '', isAuthenticated: false, isLoading: false, error: unavailable, configured: false,

@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { PLAN_LIMITS, projectLimitError, withUserLock } from '../billing/quotas';
+import { limitsFor, projectLimitError, withUserLock } from '../billing/quotas';
 import { HttpError } from '../errors';
 
 export type ImportedFile = { path: string; name: string; content: string; language: string };
@@ -18,7 +18,7 @@ export async function saveImportedProject(userId: string, input: ImportedProject
   }
   return withUserLock(userId, async (tx, user) => {
     const count = await tx.project.count({ where: { userId } });
-    if (count >= PLAN_LIMITS[user.plan].savedProjects) throw projectLimitError(user.plan);
+    if (count >= limitsFor(user.plan).savedProjects) throw projectLimitError(user.plan);
     const project = await tx.project.create({ data: {
       userId, source: input.source, label: input.label,
       files: { create: input.files },

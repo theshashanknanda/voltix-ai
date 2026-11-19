@@ -7,6 +7,14 @@ export const PLAN_LIMITS = {
   PRO: { chatMessages: 500, savedProjects: 20 },
 } as const;
 
+// ponytail: AUTH_BYPASS local-only; infinite quotas so UI work isn't blocked by FREE plan.
+export function limitsFor(plan: User['plan']) {
+  if (process.env.AUTH_BYPASS === 'true') {
+    return { chatMessages: Number.MAX_SAFE_INTEGER, savedProjects: Number.MAX_SAFE_INTEGER };
+  }
+  return PLAN_LIMITS[plan];
+}
+
 export const usageMonth = (now = new Date()) => now.toISOString().slice(0, 7);
 
 // Serialize quota decisions and project writes for this user across all server
@@ -29,7 +37,7 @@ export function projectLimitError(plan: User['plan']): HttpError {
 export async function assertProjectCapacity(userId: string): Promise<void> {
   await withUserLock(userId, async (tx, user) => {
     const count = await tx.project.count({ where: { userId } });
-    if (count >= PLAN_LIMITS[user.plan].savedProjects) throw projectLimitError(user.plan);
+    if (count >= limitsFor(user.plan).savedProjects) throw projectLimitError(user.plan);
   });
 }
 
@@ -41,7 +49,7 @@ export async function getBillingUsage(userId: string) {
       await tx.user.update({ where: { id: userId }, data: { usageMonth: month, chatMessagesUsed: 0 } });
     }
     const projects = await tx.project.count({ where: { userId } });
-    const limits = PLAN_LIMITS[user.plan];
+    const limits = limitsFor(user.plan);
     return {
       plan: user.plan, month, subscriptionStatus: user.subscriptionStatus,
       canManageBilling: Boolean(user.stripeCustomerId),
@@ -62,7 +70,7 @@ export async function consumeChatMessage(userId: string) {
   return withUserLock(userId, async (tx, user) => {
     const month = usageMonth();
     const used = user.usageMonth === month ? user.chatMessagesUsed : 0;
-    const limit = PLAN_LIMITS[user.plan].chatMessages;
+    const limit = limitsFor(user.plan).chatMessages;
     if (used >= limit) {
       throw new HttpError(402, user.plan === 'FREE'
         ? 'Your monthly chat message limit has been reached. Upgrade your plan to continue.'
