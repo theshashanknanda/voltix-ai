@@ -68,9 +68,12 @@ Voltix AI aims to:
 
 ## 🏗️ Repository Structure
 
-The application includes a React/Vite frontend and an Express/Prisma/PostgreSQL backend.
-Auth0 social sign-in setup, migration notes, and verification are documented in
-[Authentication](documentation/auth0.md).
+The app now includes a React/Vite frontend and an Express/Prisma/PostgreSQL backend.
+Implemented features include GitHub/ZIP imports, code browsing, AI explanations,
+documentation generation, maintainability reviews, and saved analyses. Auth0
+sign-in and Stripe billing setup are documented in
+[Authentication and billing](documentation/auth0-billing.md), including the
+integration contracts for the open saved-project, chat, and edit issues.
 
 - All system functionality is captured as **user stories** in GitHub Issues
 - User stories are grouped under **epics**

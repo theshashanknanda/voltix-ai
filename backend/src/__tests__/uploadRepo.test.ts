@@ -2,6 +2,13 @@ import request from 'supertest';
 import express from 'express';
 
 const mockPrismaCreate = jest.fn().mockResolvedValue({ id: 'repo-upload-id' });
+const mockProjectCount = jest.fn().mockResolvedValue(0);
+const mockTx = {
+  $queryRaw: jest.fn(),
+  user: { findUnique: jest.fn().mockResolvedValue({ id: 'test-user', plan: 'FREE' }) },
+  project: { count: mockProjectCount, create: jest.fn().mockResolvedValue({ id: 'project-id' }) },
+  analysis: { create: mockPrismaCreate },
+};
 
 jest.mock('../middleware/requireAuth', () => ({
   __esModule: true,
@@ -12,12 +19,7 @@ jest.mock('../middleware/requireAuth', () => ({
 }));
 
 jest.mock('../database/prismaClient', () => ({
-  __esModule: true,
-  prisma: {
-    analysis: {
-      create: mockPrismaCreate,
-    },
-  },
+  prisma: { $transaction: (work: (tx: unknown) => unknown) => work(mockTx) },
 }));
 
 import uploadRepoRouter from '../api/uploadRepo';
@@ -29,6 +31,7 @@ describe('POST /api/upload-repo', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockProjectCount.mockResolvedValue(0);
     (global as any).fetch = jest.fn();
   });
 
@@ -90,7 +93,7 @@ describe('POST /api/upload-repo', () => {
     expect(response.status).toBe(200);
     expect(response.body.files.map((f: { path: string }) => f.path)).toEqual(['src/index.ts']);
     expect(response.body.meta.skippedSecrets).toBe(3);
-    expect(response.body.meta.warning).toBe('Skipped 3 secret file(s) (.env or private keys).');
+    expect(response.body.meta.warning).toBe('Skipped 3 secret file(s) (.env, private keys, or credential literals).');
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[2][0]).toContain('src/index.ts');
   });
@@ -112,9 +115,29 @@ describe('POST /api/upload-repo', () => {
     expect(response.body.files).toEqual([]);
     expect(response.body.meta).toEqual(expect.objectContaining({
       skippedSecrets: 2,
-      warning: 'Skipped 2 secret file(s) (.env or private keys).',
+      warning: 'Skipped 2 secret file(s) (.env, private keys, or credential literals).',
     }));
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a second Free import before any GitHub request or write', async () => {
+    mockProjectCount.mockResolvedValue(1);
+    const response = await request(app).post('/api/upload-repo').send({ url: 'https://github.com/owner/repo' });
+    expect(response.status).toBe(402);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockPrismaCreate).not.toHaveBeenCalled();
+    expect(mockTx.project.create).not.toHaveBeenCalled();
+  });
+  it('skips credential literals before saving a project snapshot', async () => {
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ default_branch: 'main' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ tree: [{ path: 'config.js', type: 'blob' }] }) })
+      .mockResolvedValueOnce({ ok: true, headers: { get: () => 'text/plain' }, text: async () => 'const apiKey = "abcdefgh1234";' });
+    const response = await request(app).post('/api/upload-repo').send({ url: 'https://github.com/owner/repo' });
+    expect(response.status).toBe(200);
+    expect(response.body.files).toEqual([]);
+    expect(response.body.meta.skippedSecrets).toBe(1);
+    expect(mockTx.project.create).not.toHaveBeenCalled();
   });
 
   it('should return 400 for invalid GitHub URLs', async () => {

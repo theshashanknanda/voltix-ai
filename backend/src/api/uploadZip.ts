@@ -2,8 +2,11 @@ import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { unzipSync, UnzipFileInfo } from 'fflate';
-import requireAuth from '../middleware/requireAuth';
-import { isSecretPath } from '../secrets';
+import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
+import { assertProjectCapacity } from '../billing/quotas';
+import { saveImportedProject } from '../projects/importedProjects';
+import { respondError } from '../errors';
+import { containsSecret, isSecretPath } from '../secrets';
 import { MAX_FILES, getLanguage, isSupportedFile } from './uploadRepo';
 
 const router = Router();
@@ -38,7 +41,12 @@ const decodeText = (bytes?: Uint8Array): string | null => {
  * Returns the same { files, meta } shape as /api/upload-repo, with meta.name
  * (the ZIP file name) in place of owner/repo/branch.
  */
-router.post('/upload-zip', requireAuth, upload.single('file'), (req: Request, res: Response): void => {
+router.post('/upload-zip', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    await assertProjectCapacity(req.user!.id);
+    next();
+  } catch (error) { respondError(res, error, 'Unable to check project limit.'); }
+}, upload.single('file'), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   if (!req.file) {
     res.status(400).json({ error: 'No file uploaded. Please upload a .zip file.' });
     return;
@@ -108,6 +116,10 @@ router.post('/upload-zip', requireAuth, upload.single('file'), (req: Request, re
 
   const files = selected.flatMap((f) => {
     const content = decodeText(unpacked[f.name]);
+    if (content !== null && containsSecret(content)) {
+      skippedSecrets++;
+      return [];
+    }
     return content === null
       ? []
       : [{ path: f.path, name: path.posix.basename(f.path), content, language: getLanguage(f.path) }];
@@ -119,13 +131,11 @@ router.post('/upload-zip', requireAuth, upload.single('file'), (req: Request, re
 
   const warnings = [
     truncated && `Archive contains ${candidates.length} supported files. Only the first ${MAX_FILES} files were imported.`,
-    skippedSecrets > 0 && `Skipped ${skippedSecrets} secret file(s) (.env or private keys).`,
+    skippedSecrets > 0 && `Skipped ${skippedSecrets} secret file(s) (.env, private keys, or credential literals).`,
     skippedLarge > 0 && `Skipped ${skippedLarge} file(s) larger than 1 MB.`,
   ].filter(Boolean);
 
-  res.json({
-    files,
-    meta: {
+  const meta = {
       name: req.file.originalname,
       totalFiles: candidates.length,
       returnedFiles: files.length,
@@ -133,8 +143,13 @@ router.post('/upload-zip', requireAuth, upload.single('file'), (req: Request, re
       skippedSecrets,
       skippedLarge,
       ...(warnings.length > 0 && { warning: warnings.join(' ') }),
-    },
-  });
+  };
+  try {
+    const saved = await saveImportedProject(req.user!.id, {
+      source: 'zip', label: req.file.originalname, files, metadata: meta,
+    });
+    res.json({ files, meta, projectId: saved?.projectId });
+  } catch (error) { respondError(res, error, 'Unable to save imported project.'); }
 });
 
 router.use((err: Error, _req: Request, res: Response, next: NextFunction) => {

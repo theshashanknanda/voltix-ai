@@ -12,37 +12,63 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ──────────────────────────────────────────
-// USER: Auth0 subject maps to a stable internal user UUID.
-// ──────────────────────────────────────────
+enum Plan {
+  FREE
+  PRO
+}
+
 model User {
-  id           String     @id @default(uuid())
-  email        String
-  name         String?
-  passwordHash String?
-  auth0UserId   String?    @unique
-  createdAt    DateTime   @default(now())
-  analyses     Analysis[]
+  id                      String     @id @default(uuid())
+  email                   String
+  name                    String?
+  passwordHash            String?
+  auth0UserId             String?    @unique
+  plan                    Plan       @default(FREE)
+  chatMessagesUsed        Int        @default(0)
+  usageMonth              String     @default("")
+  stripeCustomerId        String?    @unique
+  stripeSubscriptionId    String?    @unique
+  stripeCheckoutSessionId String?
+  subscriptionStatus      String?
+  createdAt               DateTime   @default(now())
+  analyses                Analysis[]
+  projects                Project[]
 
   @@index([email])
   @@map("users")
 }
 
-// ──────────────────────────────────────────
-// ANALYSIS — core of Issue #43
-// Stores the uploaded filename + AI explanation.
-// userId is nullable until auth is wired up.
-// ──────────────────────────────────────────
+// Imported snapshots are counted separately from saved AI explanations.
+// Issue #111 can extend this model without changing billing's ownership contract.
+model Project {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source    String
+  label     String
+  files     Json
+  metadata  Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("projects")
+}
+
+model StripeEvent {
+  id          String   @id
+  processedAt DateTime @default(now())
+
+  @@map("stripe_events")
+}
+
 model Analysis {
   id            String   @id @default(uuid())
   repositoryUrl String
-  explanation   String   // AI-generated markdown text
+  explanation   String // AI-generated markdown text
   createdAt     DateTime @default(now())
 
-  // Loose end for auth teammate — fill in userId once auth is done
   userId String?
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@map("analyses")
 }
-

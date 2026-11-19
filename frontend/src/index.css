@@ -1487,3 +1487,8 @@ a {
 		border-bottom: 1px solid var(--border);
 	}
 }
+
+.billing-page { display: grid; gap: 20px; align-content: start; padding-bottom: 40px; }
+.billing-page :is(h1, h2, p) { margin: 0; }
+.billing-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 20px; }
+.billing-plans .card, .billing-usage { display: grid; gap: 12px; }
