@@ -90,8 +90,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       apiFetch: async () => { throw new Error(unavailable); },
     }}>{children}</AuthContext.Provider>;
   }
+  // Let the SDK restore its validated session after reload even when browser
+  // privacy settings prevent silent iframe authentication. Logout clears this cache.
   return <Auth0Provider domain={domain} clientId={clientId}
     authorizationParams={{ redirect_uri: `${window.location.origin}/auth`, audience, scope: 'openid profile email' }}
-    cacheLocation="memory"
+    cacheLocation="localstorage"
   ><AuthSession>{children}</AuthSession></Auth0Provider>;
 }

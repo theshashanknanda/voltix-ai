@@ -18,6 +18,13 @@
   obtains a fresh SDK access token for each request.
 - GitHub imports now require authentication and save the correct internal owner.
 - The old localStorage bearer-token keys are removed. Auth0 controls the session.
+  Its SDK uses its own `localstorage` cache so valid sessions survive page reloads
+  in browsers that block silent iframe authentication. Logout clears that cache.
+  No custom token format or legacy-token fallback is added. Browser storage is
+  accessible to same-origin JavaScript, so preventing XSS remains necessary.
+  Token expiry and renewal remain managed by Auth0; when browser policy blocks
+  silent renewal after expiry, the user must sign in again. See the official
+  [SDK storage guidance](https://auth0.com/docs/libraries/auth0-single-page-app-sdk#change-storage-options).
 
 ## Independent database migration
 
@@ -39,10 +46,19 @@ persistence (#111), chat (#113), and edits (#114).
 
 ## Configuration and acceptance status
 
-Code and automated checks are complete. **Live acceptance is pending tenant
-configuration, applying the migration, and Google/GitHub smoke tests.** Keep
-#110 in review until those checks pass. No Auth0 tenant was configured and no
-application database migration was applied as part of this change.
+Code and automated checks are complete. Local tenant configuration and the
+Auth0-only database migration were completed on November 19, 2026. Live GitHub
+sign-in, repeat login with the same internal user, authenticated repo import,
+saved analysis ownership, dashboard refresh, logout, and signed-out route
+protection have passed. The refresh check exposed a memory-cache limitation in
+the test browser; the SDK storage setting above fixes it and has been retested.
+
+Live Google sign-in and repeat login also passed, with one passwordless user
+for its Auth0 subject. Google and GitHub are separate identities by design.
+**Manual provider cancellation is still pending**; automated callback/provider
+failure tests pass. Keep #110 in review until the final cancellation check. Google currently uses Auth0 development
+keys for local testing; configure owned Google provider credentials before
+production deployment. No billing migration has been applied to this database.
 
 1. Create an Auth0 Single Page Application and an RS256 custom API.
 2. Enable Google (`google-oauth2`) and GitHub (`github`) connections for this
