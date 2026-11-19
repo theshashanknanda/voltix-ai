@@ -50,6 +50,7 @@ model Project {
   analyses  Analysis[]
   // Import stats, including truncated/skipped counts and the warning shown after import.
   metadata  Json
+  chat      Json     @default("[]")
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
