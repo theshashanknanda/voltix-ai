@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "chat" JSONB NOT NULL DEFAULT '[]';
