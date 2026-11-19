@@ -6,6 +6,7 @@ import { prisma } from '../database/prismaClient';
 import { HttpError, respondError } from '../errors';
 import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
 import { EDITS_ONLY_MESSAGE, languageForFilename, MAX_NEIGHBORS, MAX_OMITTED } from './explainCode';
+import { projectFiles } from './projects';
 import { containsSecret, SECRET_MESSAGE } from '../secrets';
 
 const router = Router();
@@ -130,9 +131,10 @@ router.post('/chat', requireAuth, async (req: AuthenticatedRequest, res: Respons
   }
 
   try {
+    // #111 moved files onto ProjectFile rows; load them or chat has an empty map.
     const project = await prisma.project.findFirst({
       where: { id: projectId, userId: req.user!.id },
-      include: { files: { select: { id: true, path: true, content: true, language: true } } },
+      include: { files: projectFiles },
     });
     if (!project) {
       res.status(404).json({ error: 'Project not found.' });
