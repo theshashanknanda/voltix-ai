@@ -48,6 +48,7 @@ model Project {
   label     String
   files     Json
   metadata  Json
+  chat      Json     @default("[]")
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])

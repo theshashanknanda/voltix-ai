@@ -260,8 +260,8 @@ ${code}
   }
 });
 
-const MAX_NEIGHBORS = 3;
-const MAX_OMITTED = 50;
+export const MAX_NEIGHBORS = 3;
+export const MAX_OMITTED = 50;
 
 type Neighbor = { path: string; content: string };
 

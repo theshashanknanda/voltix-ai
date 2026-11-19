@@ -10,6 +10,7 @@ import uploadZipRouter from './api/uploadZip';
 import analysesRouter from './api/analyses';
 import billingRouter from './api/billing';
 import projectsRouter from './api/projects';
+import chatRouter from './api/chat';
 import { stripeWebhook } from './billing/webhook';
 
 const app = express();
@@ -39,6 +40,7 @@ app.use('/api', uploadZipRouter);
 app.use('/api', analysesRouter);
 app.use('/api', billingRouter);
 app.use('/api', projectsRouter);
+app.use('/api', chatRouter);
 
 // For local development and testing
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
