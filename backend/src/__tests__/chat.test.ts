@@ -5,6 +5,7 @@ import express from 'express';
 const mockCreate = jest.fn();
 const mockFind = jest.fn();
 const mockProjectUpdate = jest.fn(async ({ data }) => data);
+const mockFileUpdate = jest.fn(async ({ data }) => data);
 let mockUser: Record<string, unknown>;
 const mockTx = {
   $queryRaw: jest.fn(),
@@ -20,17 +21,21 @@ jest.mock('openai', () => jest.fn().mockImplementation(() => ({
 jest.mock('../database/prismaClient', () => ({
   prisma: {
     project: { findFirst: mockFind, update: mockProjectUpdate },
+    projectFile: { update: mockFileUpdate },
     $transaction: (work: (tx: unknown) => Promise<unknown>) => work(mockTx),
   },
 }));
 
 import chatRouter from '../api/chat';
+import projectRouter from '../api/projects';
 import { usageMonth } from '../billing/quotas';
 import { SECRET_MESSAGE } from '../secrets';
+import { EDITS_ONLY_MESSAGE } from '../api/explainCode';
 
 const app = express();
 app.use(express.json());
 app.use('/api', chatRouter);
+app.use('/api', projectRouter);
 
 const file = (path: string, content: string) => ({ path, name: path, content, language: 'javascript' });
 const reply = (content: string) => mockCreate.mockResolvedValue({ choices: [{ message: { content } }] });
@@ -167,5 +172,107 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(401);
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockFind).not.toHaveBeenCalled();
+  });
+});
+
+describe('file edit suggestions', () => {
+  const appFile = { ...file('src/app.js', 'function add() {}\n'), id: 'file-app' };
+  const otherFile = { ...file('src/other.js', 'function keep() {}\n'), id: 'file-other' };
+
+  it('returns replacement text for src/app.js and does not write until apply', async () => {
+    mockFind.mockResolvedValue({ id: 'project-1', files: [appFile, otherFile], chat: [] });
+    reply(JSON.stringify({ answer: 'Renamed add to sum.', edit: { path: 'src/app.js', content: 'function sum() {}\n' } }));
+
+    const response = await send({ projectId: 'project-1', message: 'Rename add to sum.', openPath: 'src/app.js' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.suggestion).toEqual({ path: 'src/app.js', content: 'function sum() {}\n', status: 'pending' });
+    expect(response.body.answer).toContain('Renamed add to sum.');
+    expect(mockProjectUpdate).toHaveBeenCalledTimes(1);
+    expect(mockProjectUpdate.mock.calls[0][0].data.files).toBeUndefined();
+    expect(mockFileUpdate).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for an empty edit or a path outside the project and writes nothing', async () => {
+    mockFind.mockResolvedValue({ id: 'project-1', files: [appFile], chat: [] });
+    reply(JSON.stringify({ answer: 'Empty.', edit: { path: 'src/app.js', content: '  ' } }));
+    const empty = await send({ projectId: 'project-1', message: 'Rename add.', openPath: 'src/app.js' });
+
+    reply(JSON.stringify({ answer: 'Outside.', edit: { path: '../outside.js', content: 'function sum() {}\n' } }));
+    const outside = await send({ projectId: 'project-1', message: 'Rename add.', openPath: 'src/app.js' });
+
+    expect(empty.status).toBe(400);
+    expect(empty.body.error).toBe('The suggested edit is empty.');
+    expect(outside.status).toBe(400);
+    expect(outside.body.error).toBe('That file is not in this project.');
+    expect(mockProjectUpdate).not.toHaveBeenCalled();
+    expect(mockFileUpdate).not.toHaveBeenCalled();
+  });
+
+  it('explains that edits are only available for the seven supported languages', async () => {
+    mockFind.mockResolvedValue({
+      id: 'project-1',
+      files: [{ path: 'README.md', name: 'README.md', content: '# Title\n', language: 'markdown' }],
+      chat: [],
+    });
+
+    const response = await send({ projectId: 'project-1', message: 'Rename the heading.', openPath: 'README.md' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toContain(EDITS_ONLY_MESSAGE);
+    expect(response.body.suggestion).toBeNull();
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockFileUpdate).not.toHaveBeenCalled();
+    expect(mockProjectUpdate.mock.calls[0][0].data.files).toBeUndefined();
+  });
+
+  it('apply updates that file only, and a secret or outside path writes nothing', async () => {
+    mockFind.mockResolvedValue({
+      id: 'project-1',
+      files: [appFile, otherFile],
+      chat: [{ role: 'assistant', content: 'Renamed.', suggestion: { path: 'src/app.js', content: 'function sum() {}\n', status: 'pending' } }],
+    });
+    const applied = await request(app).post('/api/projects/project-1/files').set(authHeader())
+      .send({ path: 'src/app.js', content: 'function sum() {}\n' });
+
+    expect(applied.status).toBe(200);
+    expect(applied.body.message).toBe('Edit applied to src/app.js.');
+    expect(mockFileUpdate).toHaveBeenCalledTimes(1);
+    expect(mockFileUpdate).toHaveBeenCalledWith({ where: { id: 'file-app' }, data: { content: 'function sum() {}\n' } });
+    expect(mockProjectUpdate.mock.calls[0][0].data.files).toBeUndefined();
+    expect(mockProjectUpdate.mock.calls[0][0].data.chat[0].suggestion.status).toBe('applied');
+
+    mockProjectUpdate.mockClear();
+    mockFileUpdate.mockClear();
+    const secret = await request(app).post('/api/projects/project-1/files').set(authHeader())
+      .send({ path: 'src/app.js', content: 'const password = "hunter2xyz";\n' });
+    const missing = await request(app).post('/api/projects/project-1/files').set(authHeader())
+      .send({ path: 'nope.js', content: 'function sum() {}\n' });
+    const anonymous = await request(app).post('/api/projects/project-1/files')
+      .send({ path: 'src/app.js', content: 'function sum() {}\n' });
+
+    expect(secret.status).toBe(400);
+    expect(secret.body).toEqual({ error: SECRET_MESSAGE });
+    expect(missing.status).toBe(400);
+    expect(anonymous.status).toBe(401);
+    expect(mockProjectUpdate).not.toHaveBeenCalled();
+    expect(mockFileUpdate).not.toHaveBeenCalled();
+  });
+
+  it('dismiss marks the suggestion and does not write the file', async () => {
+    mockFind.mockResolvedValue({
+      id: 'project-1',
+      files: [appFile],
+      chat: [{ role: 'assistant', content: 'Renamed.', suggestion: { path: 'src/app.js', content: 'function sum() {}\n', status: 'pending' } }],
+    });
+
+    const response = await request(app).post('/api/projects/project-1/files/dismiss').set(authHeader())
+      .send({ path: 'src/app.js' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.message).toBe('Suggestion dismissed.');
+    expect(mockProjectUpdate.mock.calls[0][0].data.files).toBeUndefined();
+    expect(mockProjectUpdate.mock.calls[0][0].data.chat[0].suggestion.status).toBe('dismissed');
+    expect(mockFileUpdate).not.toHaveBeenCalled();
   });
 });
