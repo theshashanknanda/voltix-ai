@@ -18,6 +18,13 @@
   obtains a fresh SDK access token for each request.
 - GitHub imports now require authentication and save the correct internal owner.
 - The old localStorage bearer-token keys are removed. Auth0 controls the session.
+  Its SDK uses its own `localstorage` cache so valid sessions survive page reloads
+  in browsers that block silent iframe authentication. Logout clears that cache.
+  No custom token format or legacy-token fallback is added. Browser storage is
+  accessible to same-origin JavaScript, so preventing XSS remains necessary.
+  Token expiry and renewal remain managed by Auth0; when browser policy blocks
+  silent renewal after expiry, the user must sign in again. See the official
+  [SDK storage guidance](https://auth0.com/docs/libraries/auth0-single-page-app-sdk#change-storage-options).
 
 ## Independent database migration
 
@@ -39,10 +46,19 @@ persistence (#111), chat (#113), and edits (#114).
 
 ## Configuration and acceptance status
 
-Code and automated checks are complete. **Live acceptance is pending tenant
-configuration, applying the migration, and Google/GitHub smoke tests.** Keep
-#110 in review until those checks pass. No Auth0 tenant was configured and no
-application database migration was applied as part of this change.
+Code and automated checks are complete. Local tenant configuration and the
+Auth0-only database migration were completed on November 19, 2026. Live GitHub
+sign-in, repeat login with the same internal user, authenticated repo import,
+saved analysis ownership, dashboard refresh, logout, and signed-out route
+protection have passed. The refresh check exposed a memory-cache limitation in
+the test browser; the SDK storage setting above fixes it and has been retested.
+
+Live Google sign-in and repeat login also passed, with one passwordless user
+for its Auth0 subject. Google and GitHub are separate identities by design.
+**Manual provider cancellation is still pending**; automated callback/provider
+failure tests pass. Keep #110 in review until the final cancellation check. Google currently uses Auth0 development
+keys for local testing; configure owned Google provider credentials before
+production deployment. No billing migration has been applied to this database.
 
 1. Create an Auth0 Single Page Application and an RS256 custom API.
 2. Enable Google (`google-oauth2`) and GitHub (`github`) connections for this
@@ -62,6 +78,40 @@ application database migration was applied as part of this change.
    unavailable message; it does not accept legacy tokens.
 
 Do not put an Auth0 client secret or database credentials in Vite variables.
+
+## Production rollout
+
+The canonical frontend is `https://voltix-ai-frontend.vercel.app` and the API is
+`https://voltix-ai-backend.vercel.app`. `frontend/.env.production` contains only
+public browser settings for this deployment. Vite loads them for production
+builds; Vercel project variables take precedence. Development still uses the
+ignored local `.env`, and the API fallback selects localhost only in development.
+
+Before merging this branch and calling the deployment live:
+
+1. In the Voltix AI Auth0 SPA's URLs tab, replace the localhost callback and
+   logout entries with `https://voltix-ai-frontend.vercel.app/auth`, and set
+   Allowed Web Origins to `https://voltix-ai-frontend.vercel.app`. Save the form.
+   These are exact URLs, without preview-domain wildcards. To resume localhost
+   testing later, explicitly add its development URLs again.
+2. Import `backend/.env.production.example` into the backend Vercel project's
+   Production environment. Keep the existing database and AI-provider secrets in
+   Vercel. Check that frontend project variables do not override the committed
+   public production settings with stale values.
+3. Configure owned Google OAuth credentials on the Auth0 Google connection.
+   Auth0's shared development keys were sufficient for local tests and must be
+   replaced before declaring Google production-ready. The GitHub OAuth callback
+   remains the Auth0 tenant's `/login/callback`, not the frontend URL.
+4. The existing backend production GitHub Actions workflow now installs pinned
+   dependencies and runs `prisma migrate deploy` using the production environment
+   pulled from Vercel before building and deploying. Both identity and billing
+   migrations are required because billing was already merged into `main`.
+   The deployment stops if production database credentials are unavailable or a
+   migration fails. Check the workflow and Vercel environment access before rollout.
+5. After the PR is merged and both Vercel projects finish deploying, verify
+   Google/GitHub sign-in, refresh, logout, and an authenticated import on the
+   canonical frontend. A branch push or a green frontend preview does not prove
+   that the backend settings, database migrations, or Auth0 allowlist are live.
 
 ## Verification
 
