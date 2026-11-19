@@ -910,6 +910,10 @@ a {
 	align-items: start;
 }
 
+.code-layout.with-chat {
+	grid-template-columns: minmax(0, 1.7fr) minmax(240px, 0.85fr) minmax(260px, 0.95fr);
+}
+
 .code-layout-left {
 	display: grid;
 	grid-template-columns: 180px 1fr;
@@ -1445,7 +1449,8 @@ a {
 }
 
 @media (max-width: 1024px) {
-	.code-layout {
+	.code-layout,
+	.code-layout.with-chat {
 		grid-template-columns: 1fr;
 	}
 	.code-layout-left {
@@ -1487,6 +1492,41 @@ a {
 		border-bottom: 1px solid var(--border);
 	}
 }
+
+.chat-panel {
+	position: sticky;
+	top: 20px;
+	max-height: calc(100vh - 220px);
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-width: 0;
+}
+
+.chat-panel h2,
+.chat-panel p { margin: 0; }
+
+.chat-log {
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-height: 160px;
+	flex: 1;
+}
+
+.chat-bubble {
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 10px 12px;
+	background: var(--surface-2);
+}
+
+.chat-bubble.user { background: rgba(34, 197, 94, 0.08); }
+.chat-bubble p { margin: 0; white-space: pre-wrap; }
+
+.chat-form { display: flex; gap: 8px; align-items: flex-end; }
+.chat-form .input { flex: 1; resize: vertical; min-width: 0; }
 
 .billing-page { display: grid; gap: 20px; align-content: start; padding-bottom: 40px; }
 .billing-page :is(h1, h2, p) { margin: 0; }

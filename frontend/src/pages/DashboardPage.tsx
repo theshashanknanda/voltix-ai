@@ -9,6 +9,7 @@ import FileTree from '../components/FileTree';
 import { findLocalImports } from '../localImports';
 import SavedProjects from '../components/SavedProjects';
 import type { ProjectSnapshot } from '../components/SavedProjects';
+import ChatPanel, { rememberOpenProject, OPEN_PROJECT_KEY } from '../components/ChatPanel';
 
 const API_URL = `${API_BASE_URL}/api/explain`;
 const EXPLAIN_FUNCTION_URL = `${API_BASE_URL}/api/explain-function`;
@@ -168,6 +169,10 @@ export default function DashboardPage() {
   const [importedFiles, setImportedFiles] = useState<ImportedFile[]>([]);
   const [importMeta, setImportMeta] = useState<ImportMeta | null>(null);
   const [selectedFile, setSelectedFile] = useState<ImportedFile | null>(null);
+  const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
+  const projectEpoch = useRef(0);
+  const restoredProject = useRef(false);
+  const openProjectRef = useRef<(project: ProjectSnapshot) => void>(() => {});
   const [reviewStatus, setReviewStatus] = useState<Status>('idle');
   const [score, setScore] = useState<number | null>(null);
   const [summary, setSummary] = useState('');
@@ -247,6 +252,9 @@ export default function DashboardPage() {
     setDocStatus('idle');
     setImportError('');
     setImportWarning('');
+    projectEpoch.current += 1;
+    setSavedProjectId(null);
+    rememberOpenProject(null);
     setImportedFiles([]);
     setImportMeta(null);
     setSelectedFile(null);
@@ -264,6 +272,9 @@ export default function DashboardPage() {
       setImportedFiles(data.files || []);
       setImportMeta(data.meta || null);
       setImportStatus('success');
+      const nextProjectId = typeof data.projectId === 'string' ? data.projectId : null;
+      setSavedProjectId(nextProjectId);
+      rememberOpenProject(nextProjectId);
       setProjectRevision(revision => revision + 1);
 
       if (data.meta?.warning) {
@@ -306,6 +317,9 @@ export default function DashboardPage() {
     setImportStatus('idle');
     setImportError('');
     setImportWarning('');
+    projectEpoch.current += 1;
+    setSavedProjectId(null);
+    rememberOpenProject(null);
     setImportedFiles([]);
     setImportMeta(null);
     setSelectedFile(null);
@@ -473,6 +487,9 @@ export default function DashboardPage() {
     setImportStatus('idle');
     setImportError('');
     setImportWarning('');
+    projectEpoch.current += 1;
+    setSavedProjectId(null);
+    rememberOpenProject(null);
     setImportMeta(null);
     setImportedFiles([entry]);
     handleFileSelect(entry);
@@ -557,7 +574,33 @@ export default function DashboardPage() {
     setImportMeta(project.metadata);
     setImportStatus('success');
     setImportWarning(project.metadata.warning ?? '');
+    setSavedProjectId(project.id);
+    rememberOpenProject(project.id);
   };
+  openProjectRef.current = openProject;
+
+  useEffect(() => {
+    if (!token || restoredProject.current) return;
+    restoredProject.current = true;
+    let id: string | null = null;
+    try { id = sessionStorage.getItem(OPEN_PROJECT_KEY); } catch { return; }
+    if (!id) return;
+    const epoch = projectEpoch.current;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await apiFetch(`${API_BASE_URL}/api/projects/${id}`, { signal: controller.signal });
+        const data = await res.json();
+        if (controller.signal.aborted || epoch !== projectEpoch.current) return;
+        if (!res.ok || !data.project?.id) {
+          rememberOpenProject(null);
+          return;
+        }
+        openProjectRef.current(data.project);
+      } catch { /* aborted, or the project will still be there on the next visit */ }
+    })();
+    return () => controller.abort();
+  }, [token, apiFetch]);
 
   const showCodeViewerLayout = selectedFile !== null;
   const aiBusy = status === 'loading' || reviewStatus === 'loading' || docStatus === 'loading';
@@ -777,7 +820,7 @@ export default function DashboardPage() {
               )}
             </div>
 
-            <section className="code-layout">
+            <section className={`code-layout${savedProjectId ? ' with-chat' : ''}`}>
               <div className="code-layout-left">
                 <div className="file-tree-sidebar">
                   <div className="file-tree-title">Files</div>
@@ -874,6 +917,15 @@ export default function DashboardPage() {
                   onSelect={setHighlight}
                 />
               </div>
+              {savedProjectId && (
+                <ChatPanel
+                  key={savedProjectId}
+                  projectId={savedProjectId}
+                  files={importedFiles}
+                  selectedFile={selectedFile}
+                  apiFetch={apiFetch}
+                />
+              )}
             </section>
           </>
         )}
