@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DragEvent, ChangeEvent } from 'react';
+import type { DragEvent, ChangeEvent, MouseEvent as ReactMouseEvent } from 'react';
 import Markdown from '../components/Markdown';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/authContext';
@@ -168,6 +168,8 @@ export default function DashboardPage() {
   const [importedFiles, setImportedFiles] = useState<ImportedFile[]>([]);
   const [importMeta, setImportMeta] = useState<ImportMeta | null>(null);
   const [selectedFile, setSelectedFile] = useState<ImportedFile | null>(null);
+  const [openTabPaths, setOpenTabPaths] = useState<string[]>([]);
+  const [treeWidth, setTreeWidth] = useState(180);
   const [reviewStatus, setReviewStatus] = useState<Status>('idle');
   const [score, setScore] = useState<number | null>(null);
   const [summary, setSummary] = useState('');
@@ -261,10 +263,15 @@ export default function DashboardPage() {
         throw new Error(data.error || 'Import failed');
       }
 
-      setImportedFiles(data.files || []);
+      const files: ImportedFile[] = data.files || [];
+      setImportedFiles(files);
       setImportMeta(data.meta || null);
       setImportStatus('success');
       setProjectRevision(revision => revision + 1);
+      if (files[0]) {
+        setOpenTabPaths([files[0].path]);
+        setSelectedFile(files[0]);
+      }
 
       if (data.meta?.warning) {
         setImportWarning(data.meta.warning);
@@ -309,6 +316,7 @@ export default function DashboardPage() {
     setImportedFiles([]);
     setImportMeta(null);
     setSelectedFile(null);
+    setOpenTabPaths([]);
     setExp('');
     setStatus('idle');
     clearReview();
@@ -444,9 +452,8 @@ export default function DashboardPage() {
     }
   };
 
-  const handleFileSelect = useCallback((f: ImportedFile) => {
+  const clearAnalysisPanel = useCallback(() => {
     explainRequestId.current += 1;
-    setSelectedFile(f);
     setExp('');
     setStatus('idle');
     setError('');
@@ -457,6 +464,42 @@ export default function DashboardPage() {
     setDocError('');
     clearReview();
   }, [clearReview]);
+
+  const handleFileSelect = useCallback((f: ImportedFile) => {
+    setOpenTabPaths((prev) => (prev.includes(f.path) ? prev : [...prev, f.path]));
+    if (selectedFile?.path === f.path) return;
+    setSelectedFile(f);
+    clearAnalysisPanel();
+  }, [clearAnalysisPanel, selectedFile?.path]);
+
+  const closeTab = useCallback((path: string) => {
+    const idx = openTabPaths.indexOf(path);
+    if (idx < 0) return;
+    const next = openTabPaths.filter((p) => p !== path);
+    setOpenTabPaths(next);
+    if (selectedFile?.path !== path) return;
+    const fallbackPath = next[Math.min(idx, next.length - 1)] ?? null;
+    const file = fallbackPath ? importedFiles.find((f) => f.path === fallbackPath) : null;
+    setSelectedFile(file ?? null);
+    clearAnalysisPanel();
+  }, [openTabPaths, selectedFile?.path, importedFiles, clearAnalysisPanel]);
+
+  const onTreeResizeStart = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = treeWidth;
+    const onMove = (ev: globalThis.MouseEvent) => {
+      setTreeWidth(Math.min(480, Math.max(140, startW + ev.clientX - startX)));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.classList.remove('file-tree-resizing');
+    };
+    document.body.classList.add('file-tree-resizing');
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [treeWidth]);
 
   const pick = async (f: File) => {
     clearReview();
@@ -557,10 +600,17 @@ export default function DashboardPage() {
     setImportMeta(project.metadata);
     setImportStatus('success');
     setImportWarning(project.metadata.warning ?? '');
+    if (project.files[0]) {
+      setOpenTabPaths([project.files[0].path]);
+      setSelectedFile(project.files[0]);
+    }
   };
 
-  const showCodeViewerLayout = selectedFile !== null;
+  const showCodeViewerLayout = importedFiles.length > 0;
   const aiBusy = status === 'loading' || reviewStatus === 'loading' || docStatus === 'loading';
+  const openTabs = openTabPaths
+    .map((path) => (selectedFile?.path === path ? selectedFile : importedFiles.find((f) => f.path === path)))
+    .filter((f): f is ImportedFile => !!f);
 
   const saveActions = (text: string) => (
     <>
@@ -754,31 +804,27 @@ export default function DashboardPage() {
               <button
                 className="btn btn-ghost btn-sm"
                 type="button"
-                onClick={() => {
-                  explainRequestId.current += 1;
-                  setSelectedFile(null);
-                  setExp('');
-                  setStatus('idle');
-                  setDocStatus('idle');
-                  setDocError('');
-                  clearReview();
-                }}
+                onClick={clearImport}
               >
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
-                Back to files
+                Back to upload
               </button>
               {importMeta && (
                 <div className="code-layout-meta">
                   <span className="accent">{importLabel(importMeta)}</span>
                   {importMeta.branch && <span className="pill">{importMeta.branch}</span>}
+                  <span className="pill">{importedFiles.length} files</span>
                 </div>
               )}
             </div>
 
             <section className="code-layout">
-              <div className="code-layout-left">
+              <div
+                className="code-layout-left"
+                style={{ ['--file-tree-width' as string]: `${treeWidth}px` }}
+              >
                 <div className="file-tree-sidebar">
                   <div className="file-tree-title">Files</div>
                   <div className="file-tree-list">
@@ -790,35 +836,85 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
+                <div
+                  className="file-tree-resize-handle"
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize file tree"
+                  onMouseDown={onTreeResizeStart}
+                />
+
                 <div className="card code-viewer-card">
-                  <CodeViewer
-                    key={selectedFile!.path}
-                    filename={selectedFile!.name}
-                    content={selectedFile!.content}
-                    language={selectedFile!.language}
-                    onAnalyze={() => explainSelectedFile(API_URL)}
-                    analyzing={status === 'loading'}
-                    onReview={reviewSelectedFile}
-                    reviewing={reviewStatus === 'loading'}
-                    onDocument={documentSelectedFile}
-                    documenting={docStatus === 'loading'}
-                    onExplainFunction={functionName => explainSelectedFile(EXPLAIN_FUNCTION_URL, { functionName })}
-                    onExplainContext={explainWithContext}
-                    busy={aiBusy}
-                    highlight={highlight}
-                  />
+                  {openTabs.length > 0 && (
+                    <div className="file-tabs" role="tablist">
+                      {openTabs.map((tab) => (
+                        <div
+                          key={tab.path}
+                          className={`file-tab ${selectedFile?.path === tab.path ? 'active' : ''}`}
+                          role="tab"
+                          aria-selected={selectedFile?.path === tab.path}
+                          onClick={() => handleFileSelect(tab)}
+                        >
+                          <span className="file-tab-path" title={tab.path}>{tab.path}</span>
+                          <button
+                            className="file-tab-close"
+                            type="button"
+                            aria-label={`Close ${tab.path}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              closeTab(tab.path);
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {selectedFile ? (
+                    <CodeViewer
+                      key={selectedFile.path}
+                      filename={selectedFile.name}
+                      content={selectedFile.content}
+                      language={selectedFile.language}
+                      onAnalyze={() => explainSelectedFile(API_URL)}
+                      analyzing={status === 'loading'}
+                      onReview={reviewSelectedFile}
+                      reviewing={reviewStatus === 'loading'}
+                      onDocument={documentSelectedFile}
+                      documenting={docStatus === 'loading'}
+                      onExplainFunction={functionName => explainSelectedFile(EXPLAIN_FUNCTION_URL, { functionName })}
+                      onExplainContext={explainWithContext}
+                      busy={aiBusy}
+                      highlight={highlight}
+                    />
+                  ) : (
+                    <div className="code-viewer-empty">
+                      <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                      </svg>
+                      <p>Select a file from the tree to open it</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="card output-card code-layout-right">
                 <h2>{status === 'success' ? 'AI Analysis' : 'Analysis'}</h2>
 
-                {docStatus === 'loading' && (
+                {!selectedFile && status === 'idle' && reviewStatus === 'idle' && docStatus === 'idle' && (
+                  <div className="analysis-placeholder">
+                    <p>Open a file to run Analyze or Code review.</p>
+                  </div>
+                )}
+
+                {selectedFile && docStatus === 'loading' && (
                   <div className="loading-state">
                     <div className="spinner" />
                     <div>
                       <p>Writing comments…</p>
-                      <span className="muted">Adding documentation to <strong>{selectedFile!.name}</strong>.</span>
+                      <span className="muted">Adding documentation to <strong>{selectedFile.name}</strong>.</span>
                     </div>
                   </div>
                 )}
@@ -827,19 +923,19 @@ export default function DashboardPage() {
                   <div className="error-banner" role="alert">{docError}</div>
                 )}
 
-                {docStatus === 'success' && (
+                {selectedFile && docStatus === 'success' && (
                   <div className="markdown">
-                    <p>Comments added to <strong>{selectedFile!.name}</strong> in the code viewer. Save to keep this version.</p>
-                    {saveActions('```' + selectedFile!.language + '\n' + selectedFile!.content + '\n```')}
+                    <p>Comments added to <strong>{selectedFile.name}</strong> in the code viewer. Save to keep this version.</p>
+                    {saveActions('```' + selectedFile.language + '\n' + selectedFile.content + '\n```')}
                   </div>
                 )}
 
-                {status === 'loading' && (
+                {selectedFile && status === 'loading' && (
                   <div className="loading-state">
                     <div className="spinner" />
                     <div>
                       <p>Analysis underway…</p>
-                      <span className="muted">Sending <strong>{selectedFile!.name}</strong> to the model.</span>
+                      <span className="muted">Sending <strong>{selectedFile.name}</strong> to the model.</span>
                     </div>
                   </div>
                 )}
@@ -855,7 +951,7 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {status === 'idle' && reviewStatus === 'idle' && docStatus === 'idle' && (
+                {selectedFile && status === 'idle' && reviewStatus === 'idle' && docStatus === 'idle' && (
                   <div className="analysis-placeholder">
                     <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="3" />

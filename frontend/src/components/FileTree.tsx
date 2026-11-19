@@ -1,4 +1,5 @@
-import { useState, useMemo, memo, createContext, useContext } from 'react';
+import { useState, useMemo, memo, createContext, useContext, useEffect } from 'react';
+import { expandPathsFor } from '../fileTreeExpand';
 
 interface ImportedFile {
   path: string;
@@ -24,7 +25,8 @@ interface TreeItem {
 const SelectionContext = createContext<{
   selectedFilePath?: string;
   onFileSelect: (file: ImportedFile) => void;
-}>({ onFileSelect: () => {} });
+  expandPaths: Set<string>;
+}>({ onFileSelect: () => {}, expandPaths: new Set() });
 
 /* ---------------- Component ---------------- */
 
@@ -58,10 +60,21 @@ const FileTree = memo(function FileTree({ files, selectedFilePath, onFileSelect 
     });
   }, [treeData]);
 
+  const expandPaths = useMemo(
+    () => new Set(expandPathsFor(selectedFilePath ?? '')),
+    [selectedFilePath],
+  );
+
   const contextValue = useMemo(() => ({
     selectedFilePath,
-    onFileSelect
-  }), [selectedFilePath, onFileSelect]);
+    onFileSelect,
+    expandPaths,
+  }), [selectedFilePath, onFileSelect, expandPaths]);
+
+  useEffect(() => {
+    if (!selectedFilePath) return;
+    document.querySelector('.tree-item.active')?.scrollIntoView({ block: 'nearest' });
+  }, [selectedFilePath, expandPaths]);
 
   return (
     <SelectionContext.Provider value={contextValue}>
@@ -88,15 +101,19 @@ interface TreeNodeProps {
 }
 
 const TreeNode = memo(function TreeNode({ item, depth }: TreeNodeProps) {
-  const { selectedFilePath, onFileSelect } = useContext(SelectionContext);
-  const [isExpanded, setIsExpanded] = useState(depth === 0); // Root expanded, others collapsed by default
+  const { selectedFilePath, onFileSelect, expandPaths } = useContext(SelectionContext);
+  const [userExpanded, setUserExpanded] = useState(depth === 0);
+  const forceOpen = item.type === 'folder' && expandPaths.has(item.path);
+  const isExpanded = forceOpen || userExpanded;
   const isSelected = item.type === 'file' && item.path === selectedFilePath;
   const hasChildren = Object.keys(item.children).length > 0;
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (item.type === 'folder') {
-      setIsExpanded(!isExpanded);
+      // ponytail: forceOpen wins while the active file lives under this folder;
+      // toggling still updates userExpanded for when selection moves away.
+      setUserExpanded(!isExpanded);
     } else if (item.fileData) {
       onFileSelect(item.fileData);
     }
