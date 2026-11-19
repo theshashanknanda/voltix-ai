@@ -25,7 +25,7 @@ const client = new OpenAI({
 type ProjectFile = { path: string; content: string; language: string };
 type Suggestion = { path: string; content: string; status: 'pending' | 'applied' | 'dismissed' };
 type StoredMessage = { role: 'user' | 'assistant'; content: string; suggestion?: Suggestion };
-const EDIT_REQUEST = /\b(edit|change|rename|rewrite|modify|update|replace|refactor)\b/i;
+const EDIT_REQUEST = /\b(edit|change|rename|rewrite|modify|update|replace|refactor)\b/i; // case-insensitive: "Rename" counts
 
 function readFiles(value: unknown): ProjectFile[] {
   if (!Array.isArray(value)) return [];
@@ -50,9 +50,15 @@ function readMessages(value: unknown): StoredMessage[] {
   return value.flatMap(item => {
     if (!item || typeof item !== 'object') return [];
     const message = item as { role?: unknown; content?: unknown; suggestion?: unknown };
-    if ((message.role !== 'user' && message.role !== 'assistant') || typeof message.content !== 'string') return [];
+    if (typeof message.content !== 'string') return [];
+    if (message.role !== 'user' && message.role !== 'assistant') return [];
     const suggestion = readSuggestion(message.suggestion);
-    return [{ role: message.role, content: message.content, ...(suggestion ? { suggestion } : {}) }];
+    const stored: StoredMessage = {
+      role: message.role === 'user' ? 'user' : 'assistant',
+      content: message.content,
+    };
+    if (suggestion) stored.suggestion = suggestion;
+    return [stored];
   }).slice(-MAX_MESSAGES);
 }
 
