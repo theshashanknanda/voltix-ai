@@ -64,7 +64,7 @@ describe('POST /api/upload-zip', () => {
     expect(response.status).toBe(200);
     expect(response.body.meta.skippedSecrets).toBe(1);
     expect(mockProjectCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
-      files: [{ path: 'safe.js', name: 'safe.js', content: 'run()', language: 'javascript' }],
+      files: { create: [{ path: 'safe.js', name: 'safe.js', content: 'run()', language: 'javascript' }] },
     }) }));
   });
 
@@ -92,6 +92,7 @@ describe('POST /api/upload-zip', () => {
       if (token) req.set('Authorization', `Bearer ${token}`);
       const response = await req.attach('file', zip({ 'a.js': 'x()' }), 'project.zip');
       expect(response.status).toBe(401);
+      expect(mockProjectCreate).not.toHaveBeenCalled();
     },
   );
 

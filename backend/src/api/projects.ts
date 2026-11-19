@@ -4,6 +4,9 @@ import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
 import { respondError } from '../errors';
 
 const router = Router();
+export const projectFiles = {
+  select: { path: true, name: true, content: true, language: true }, orderBy: { path: 'asc' },
+} as const;
 router.get('/projects', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const projects = await prisma.project.findMany({
@@ -15,7 +18,9 @@ router.get('/projects', requireAuth, async (req: AuthenticatedRequest, res) => {
 });
 router.get('/projects/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const project = await prisma.project.findFirst({ where: { id: String(req.params.id), userId: req.user!.id } });
+    const project = await prisma.project.findFirst({
+      where: { id: String(req.params.id), userId: req.user!.id }, include: { files: projectFiles },
+    });
     if (!project) { res.status(404).json({ error: 'Project not found.' }); return; }
     res.json({ project });
   } catch (error) { respondError(res, error, 'Unable to load saved project.'); }

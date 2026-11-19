@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { DragEvent, ChangeEvent, MouseEvent as ReactMouseEvent } from 'react';
 import Markdown from '../components/Markdown';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/authContext';
 import { API_BASE_URL } from '../config';
 import CodeViewer from '../components/CodeViewer';
@@ -167,6 +167,7 @@ export default function DashboardPage() {
   const [importWarning, setImportWarning] = useState('');
   const [importedFiles, setImportedFiles] = useState<ImportedFile[]>([]);
   const [importMeta, setImportMeta] = useState<ImportMeta | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<ImportedFile | null>(null);
   const [openTabPaths, setOpenTabPaths] = useState<string[]>([]);
   const [treeWidth, setTreeWidth] = useState(180);
@@ -266,6 +267,7 @@ export default function DashboardPage() {
       const files: ImportedFile[] = data.files || [];
       setImportedFiles(files);
       setImportMeta(data.meta || null);
+      setProjectId(data.projectId ?? null);
       setImportStatus('success');
       setProjectRevision(revision => revision + 1);
       if (files[0]) {
@@ -315,6 +317,7 @@ export default function DashboardPage() {
     setImportWarning('');
     setImportedFiles([]);
     setImportMeta(null);
+    setProjectId(null);
     setSelectedFile(null);
     setOpenTabPaths([]);
     setExp('');
@@ -558,6 +561,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           repositoryUrl: repositoryLabel,
           explanation: text,
+          projectId,
         }),
       });
       const data = await res.json();
@@ -598,6 +602,7 @@ export default function DashboardPage() {
     setDocError('');
     setImportedFiles(project.files);
     setImportMeta(project.metadata);
+    setProjectId(project.id);
     setImportStatus('success');
     setImportWarning(project.metadata.warning ?? '');
     if (project.files[0]) {
@@ -605,6 +610,25 @@ export default function DashboardPage() {
       setSelectedFile(project.files[0]);
     }
   };
+
+  // Saved analyses link here as /dashboard?project=<id> to reopen the stored files.
+  const [searchParams] = useSearchParams();
+  const linkedProject = searchParams.get('project');
+  const openLinkedProject = useEffectEvent(openProject);
+  useEffect(() => {
+    if (!linkedProject) return;
+    const controller = new AbortController();
+    void apiFetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(linkedProject)}`, { signal: controller.signal })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Unable to open project.');
+        openLinkedProject(data.project);
+      })
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted) setImportError(err instanceof Error ? err.message : 'Unable to open project.');
+      });
+    return () => controller.abort();
+  }, [linkedProject, apiFetch]);
 
   const showCodeViewerLayout = importedFiles.length > 0;
   const aiBusy = status === 'loading' || reviewStatus === 'loading' || docStatus === 'loading';

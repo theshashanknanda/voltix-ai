@@ -4,6 +4,7 @@ import { API_BASE_URL } from '../config';
 
 type ProjectSummary = { id: string; label: string; source: string; createdAt: string };
 export type ProjectSnapshot = {
+  id: string;
   files: { path: string; name: string; content: string; language: string }[];
   metadata: { owner?: string; repo?: string; branch?: string; name?: string; totalFiles: number; returnedFiles: number; truncated: boolean; warning?: string };
 };

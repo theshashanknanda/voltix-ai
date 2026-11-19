@@ -17,7 +17,7 @@ it('reopens an owned snapshot without model work or quota consumption', async ()
   mockFind.mockResolvedValue({ id: 'mine', files: [{ path: 'a.js', content: 'run()' }] });
   const response = await request(app).get('/api/projects/mine').set(authHeader());
   expect(response.status).toBe(200); expect(response.body.project.files).toHaveLength(1);
-  expect(mockFind).toHaveBeenCalledWith({ where: { id: 'mine', userId: 'test-user' } });
+  expect(mockFind).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'mine', userId: 'test-user' } }));
 });
 it('does not disclose or delete a project owned by someone else', async () => {
   mockFind.mockResolvedValue(null); mockDelete.mockResolvedValue({ count: 0 });
