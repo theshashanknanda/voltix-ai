@@ -2,10 +2,11 @@
 
 ## Review and rollout order
 
-Auth0 is isolated on `feature/110-auth0-login`, based on the current `main`.
-Billing is on `feature/115-billing-foundation`, stacked on the Auth0 branch.
-Review Auth0 against `main` and billing against the Auth0 branch until #110 is
-merged. This keeps Stripe/project/chat integration work out of the Auth0 review.
+The initial Auth0 and billing implementations were merged into `main` in PRs
+#116 and #117. The production-configuration and session-restoration follow-up is
+on `feature/110-auth0-login`; review its remaining diff against `main`.
+See [auth0.md](auth0.md#production-rollout) for the exact production URLs,
+required hosting settings, and remaining provider setup.
 
 The migrations are separate: `20261119142000_auth0_login` owns identity changes;
 `20261119143000_billing_projects` adds plans, counters, Stripe identifiers/events,

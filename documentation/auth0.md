@@ -79,6 +79,40 @@ production deployment. No billing migration has been applied to this database.
 
 Do not put an Auth0 client secret or database credentials in Vite variables.
 
+## Production rollout
+
+The canonical frontend is `https://voltix-ai-frontend.vercel.app` and the API is
+`https://voltix-ai-backend.vercel.app`. `frontend/.env.production` contains only
+public browser settings for this deployment. Vite loads them for production
+builds; Vercel project variables take precedence. Development still uses the
+ignored local `.env`, and the API fallback selects localhost only in development.
+
+Before merging this branch and calling the deployment live:
+
+1. In the Voltix AI Auth0 SPA's URLs tab, replace the localhost callback and
+   logout entries with `https://voltix-ai-frontend.vercel.app/auth`, and set
+   Allowed Web Origins to `https://voltix-ai-frontend.vercel.app`. Save the form.
+   These are exact URLs, without preview-domain wildcards. To resume localhost
+   testing later, explicitly add its development URLs again.
+2. Import `backend/.env.production.example` into the backend Vercel project's
+   Production environment. Keep the existing database and AI-provider secrets in
+   Vercel. Check that frontend project variables do not override the committed
+   public production settings with stale values.
+3. Configure owned Google OAuth credentials on the Auth0 Google connection.
+   Auth0's shared development keys were sufficient for local tests and must be
+   replaced before declaring Google production-ready. The GitHub OAuth callback
+   remains the Auth0 tenant's `/login/callback`, not the frontend URL.
+4. The existing backend production GitHub Actions workflow now installs pinned
+   dependencies and runs `prisma migrate deploy` using the production environment
+   pulled from Vercel before building and deploying. Both identity and billing
+   migrations are required because billing was already merged into `main`.
+   The deployment stops if production database credentials are unavailable or a
+   migration fails. Check the workflow and Vercel environment access before rollout.
+5. After the PR is merged and both Vercel projects finish deploying, verify
+   Google/GitHub sign-in, refresh, logout, and an authenticated import on the
+   canonical frontend. A branch push or a green frontend preview does not prove
+   that the backend settings, database migrations, or Auth0 allowlist are live.
+
 ## Verification
 
 Backend Jest tests use generated RS256 tokens and a real local discovery/JWKS
