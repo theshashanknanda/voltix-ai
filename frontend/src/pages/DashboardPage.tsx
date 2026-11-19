@@ -7,6 +7,8 @@ import { API_BASE_URL } from '../config';
 import CodeViewer from '../components/CodeViewer';
 import FileTree from '../components/FileTree';
 import { findLocalImports } from '../localImports';
+import SavedProjects from '../components/SavedProjects';
+import type { ProjectSnapshot } from '../components/SavedProjects';
 
 const API_URL = `${API_BASE_URL}/api/explain`;
 const EXPLAIN_FUNCTION_URL = `${API_BASE_URL}/api/explain-function`;
@@ -143,6 +145,8 @@ function MaintainabilityPanel({
 
 export default function DashboardPage() {
   const { email, logout, token, apiFetch } = useAuth();
+  const [projectRevision, setProjectRevision] = useState(0);
+  const [importQuotaExceeded, setImportQuotaExceeded] = useState(false);
   const [explanation, setExp] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [errorMsg, setError] = useState('');
@@ -236,6 +240,11 @@ export default function DashboardPage() {
 
   const runImport = async (send: () => Promise<Response>, fallbackError: string) => {
     setImportStatus('loading');
+    setImportQuotaExceeded(false);
+    explainRequestId.current += 1;
+    setExp('');
+    setStatus('idle');
+    setDocStatus('idle');
     setImportError('');
     setImportWarning('');
     setImportedFiles([]);
@@ -248,12 +257,14 @@ export default function DashboardPage() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (res.status === 402) setImportQuotaExceeded(true);
         throw new Error(data.error || 'Import failed');
       }
 
       setImportedFiles(data.files || []);
       setImportMeta(data.meta || null);
       setImportStatus('success');
+      setProjectRevision(revision => revision + 1);
 
       if (data.meta?.warning) {
         setImportWarning(data.meta.warning);
@@ -537,6 +548,17 @@ export default function DashboardPage() {
     setDocError('');
   };
 
+  const openProject = (project: ProjectSnapshot) => {
+    clearImport();
+    explainRequestId.current += 1;
+    setDocStatus('idle');
+    setDocError('');
+    setImportedFiles(project.files);
+    setImportMeta(project.metadata);
+    setImportStatus('success');
+    setImportWarning(project.metadata.warning ?? '');
+  };
+
   const showCodeViewerLayout = selectedFile !== null;
   const aiBusy = status === 'loading' || reviewStatus === 'loading' || docStatus === 'loading';
 
@@ -574,6 +596,7 @@ export default function DashboardPage() {
         <div className="nav-actions">
           <Link className="btn btn-ghost" to="/">Landing</Link>
           <Link className="btn btn-ghost" to="/auth">Auth</Link>
+          <Link className="btn btn-ghost" to="/billing">Billing</Link>
           <span className="eyebrow">Upload Workspace</span>
           <span className="pill">Signed in as {email || 'user'}</span>
           <button className="btn btn-ghost" type="button" onClick={logout}>Logout</button>
@@ -666,6 +689,7 @@ export default function DashboardPage() {
                       <line x1="9" y1="9" x2="15" y2="15" />
                     </svg>
                     {importError}
+                    {importQuotaExceeded && <Link className="btn btn-primary" to="/billing">View plans</Link>}
                   </div>
                 )}
 
@@ -718,7 +742,7 @@ export default function DashboardPage() {
 
               {errorMsg && <div className="error-banner">{errorMsg}</div>}
               <div className="upload-footer">
-                <span className="muted">Encrypted transfer · temporary processing · files open in the code viewer</span>
+                <span className="muted">Repository and ZIP imports are saved to your account. Single files stay in this workspace.</span>
               </div>
             </div>
           </section>
@@ -853,6 +877,8 @@ export default function DashboardPage() {
             </section>
           </>
         )}
+
+        <SavedProjects revision={projectRevision} onOpen={openProject} />
 
         <section className="card">
           <h2>Saved analyses</h2>

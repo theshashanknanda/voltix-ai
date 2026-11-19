@@ -1,8 +1,10 @@
 import { Router, Response } from 'express';
-import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
 import path from 'path';
-import { prisma } from '../database/prismaClient';
-import { isSecretPath } from '../secrets';
+import { containsSecret, isSecretPath } from '../secrets';
+import requireAuth, { AuthenticatedRequest } from '../middleware/requireAuth';
+import { assertProjectCapacity } from '../billing/quotas';
+import { saveImportedProject } from '../projects/importedProjects';
+import { respondError } from '../errors';
 
 const router = Router();
 
@@ -110,7 +112,7 @@ const encodeGithubPath = (filePath: string): string => {
 
 router.post('/upload-repo', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   // Accept both { url } and { repoUrl } for flexibility
-  const rawBody = req.body as { url?: string; repoUrl?: string };
+  const rawBody = (req.body ?? {}) as { url?: string; repoUrl?: string };
   const url = rawBody.url || rawBody.repoUrl;
 
   if (!url || typeof url !== 'string') {
@@ -130,6 +132,7 @@ router.post('/upload-repo', requireAuth, async (req: AuthenticatedRequest, res: 
   }
 
   try {
+    await assertProjectCapacity(req.user!.id);
     const headers = getGithubHeaders();
 
     /* ---- Verify repo exists & is accessible ---- */
@@ -206,7 +209,7 @@ router.post('/upload-repo', requireAuth, async (req: AuthenticatedRequest, res: 
     /* ---- Filter to supported files ---- */
     const treeItems = treeData.tree as Array<{ path: string; type: string }>;
     const blobs = treeItems.filter((item) => item.type === 'blob');
-    const skippedSecrets = blobs.filter((item) => isSecretPath(item.path)).length;
+    let skippedSecrets = blobs.filter((item) => isSecretPath(item.path)).length;
     const blobFiles = blobs.filter(
       (item) => !isSecretPath(item.path) && isSupportedFile(item.path),
     );
@@ -262,6 +265,10 @@ router.post('/upload-repo', requireAuth, async (req: AuthenticatedRequest, res: 
             language = 'binary';
           }
 
+          if (language !== 'binary' && containsSecret(content)) {
+            skippedSecrets++;
+            continue;
+          }
           files.push({
             path: item.path,
             name: path.basename(item.path),
@@ -278,38 +285,31 @@ router.post('/upload-repo', requireAuth, async (req: AuthenticatedRequest, res: 
     files.sort((a, b) => a.path.localeCompare(b.path));
 
     /* ---- Save analysis record ---- */
-    const saved = await prisma.analysis.create({
-      data: {
-        repositoryUrl: url,
-        explanation: `Imported ${files.length} file(s) from ${owner}/${repo}`,
-        userId: req.user!.id,
-      },
+    const meta = {
+      owner, repo, branch: defaultBranch, totalFiles: totalMatchingFiles,
+      returnedFiles: files.length, truncated, skippedSecrets,
+    };
+    const saved = await saveImportedProject(req.user!.id, {
+      source: 'github', label: `${owner}/${repo}`, files, metadata: meta, repositoryUrl: url,
     });
 
     /* ---- Respond ---- */
     const warnings = [
       truncated && `Repository contains ${totalMatchingFiles} supported files. Only the first ${MAX_FILES} files were imported.`,
-      skippedSecrets > 0 && `Skipped ${skippedSecrets} secret file(s) (.env or private keys).`,
+      skippedSecrets > 0 && `Skipped ${skippedSecrets} secret file(s) (.env, private keys, or credential literals).`,
     ].filter(Boolean);
 
     res.json({
-      analysisId: saved.id,
+      analysisId: saved?.analysisId,
+      projectId: saved?.projectId,
       files,
       meta: {
-        owner,
-        repo,
-        branch: defaultBranch,
-        totalFiles: totalMatchingFiles,
-        returnedFiles: files.length,
-        truncated,
-        skippedSecrets,
+        ...meta,
         ...(warnings.length > 0 && { warning: warnings.join(' ') }),
       },
     });
   } catch (err: unknown) {
-    console.error('[upload-repo] Error', err);
-    const message = err instanceof Error ? err.message : 'Repository import failed.';
-    res.status(500).json({ error: `Repository import failed: ${message}` });
+    respondError(res, err, 'Repository import failed. Please try again.');
   }
 });
 
